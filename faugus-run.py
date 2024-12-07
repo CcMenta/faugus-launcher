@@ -84,7 +84,6 @@ class FaugusRun:
 
         if self.runinprefix:
             self.message = f'PROTON_VERB=runinprefix {self.message}'
-        else: pass
 
         if "WINEPREFIX" not in self.message:
             if self.default_runner:
