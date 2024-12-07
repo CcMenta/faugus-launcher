@@ -39,6 +39,7 @@ class FaugusRun:
         self.default_prefix = None
         self.discrete_gpu = None
         self.splash_disable = None
+        self.runinprefix = None
 
     def show_error_dialog(self, protonpath):
         dialog = Gtk.MessageDialog(
@@ -80,6 +81,10 @@ class FaugusRun:
             discrete_gpu = "DRI_PRIME=1"
         if self.discrete_gpu == None:
             discrete_gpu = "DRI_PRIME=1"
+
+        if self.runinprefix:
+            self.message = f'PROTON_VERB=runinprefix {self.message}'
+        else: pass
 
         if "WINEPREFIX" not in self.message:
             if self.default_runner:
@@ -151,8 +156,9 @@ class FaugusRun:
             self.splash_disable = config_dict.get('splash-disable', 'False') == 'True'
             self.default_runner = config_dict.get('default-runner', '')
             self.default_prefix = config_dict.get('default-prefix', '')
+            self.runinprefix = config_dict.get('runinprefix', 'False') == 'True'
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False")
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False")
             self.default_runner = "GE-Proton"
 
     def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state,
