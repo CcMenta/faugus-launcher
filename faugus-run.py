@@ -98,7 +98,8 @@ class FaugusRun:
 
         print(self.message)
 
-        self.components_run()
+        if "UMU_NO_PROTON" not in self.message:
+            self.components_run()
         self.process = subprocess.Popen(["/bin/bash", "-c", f"{discrete_gpu} {eac_dir} {be_dir} {self.message}"], stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, text=True)
 
@@ -160,7 +161,7 @@ class FaugusRun:
             self.default_runner = "GE-Proton"
 
     def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state,
-                    default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot):
+                    default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, checkbox_runinprefix):
         config_file = config_file_dir
 
         config_path = faugus_launcher_dir
@@ -190,6 +191,7 @@ class FaugusRun:
         config['splash-disable'] = checkbox_splash_disable
         config['system-tray'] = checkbox_system_tray
         config['start-boot'] = checkbox_start_boot
+        config['runinprefix'] = checkbox_runinprefix
 
         with open(config_file, 'w') as f:
             for key, value in config.items():
@@ -235,12 +237,13 @@ class FaugusRun:
         grid.attach(image, 0, 0, 1, 1)
 
         protonpath = next((part.split('=')[1] for part in self.message.split() if part.startswith("PROTONPATH=")), None)
-        if "UMU_NO_PROTON" in self.message:
-            protonpath = "Running linux native"
         if protonpath == "Using UMU-Proton":
             protonpath = "UMU-Proton Latest"
         if not protonpath:
-            protonpath = "Using UMU-Proton Latest"
+            if "UMU_NO_PROTON" in self.message:
+                protonpath = "Running linux native"
+            else:
+                protonpath = "Using UMU-Proton Latest"
         else:
             if "UMU_NO_PROTON" not in self.message:
                 protonpath = f"Using {protonpath}"
@@ -330,7 +333,7 @@ class FaugusRun:
             self.label2.set_text("Steam Runtime is up to date")
 
 
-        if "ProtonFixes" in clean_line:
+        if "fsync: up and running" in clean_line or "SingleInstance" in clean_line:
             GLib.timeout_add_seconds(0, self.close_warning_dialog)
 
     def append_to_text_view(self, clean_line):
