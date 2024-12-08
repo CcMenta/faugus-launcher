@@ -1640,8 +1640,8 @@ class Settings(Gtk.Dialog):
         self.checkbox_splash_disable = Gtk.CheckButton(label="Disable splash window")
         self.checkbox_splash_disable.set_active(False)
 
-        # Create checkbox for 'runinprefixplaceholder' option
-        self.checkbox_runinprefix = Gtk.CheckButton(label="runinprefixplaceholder")
+        # Create checkbox for 'Run multiple games in the same prefix' option
+        self.checkbox_runinprefix = Gtk.CheckButton(label="Run multiple games in the same prefix")
         self.checkbox_runinprefix.set_active(False)
 
         # Button Winetricks
