@@ -68,7 +68,6 @@ class FaugusRun:
             protonpath_path = f'{share_dir}/Steam/compatibilitytools.d/{protonpath}'
             if not os.path.isdir(protonpath_path):
                 self.show_error_dialog(protonpath)
-
         if self.default_runner == "UMU-Proton Latest":
             self.default_runner = ""
         if self.default_runner == "GE-Proton Latest (default)":
@@ -82,12 +81,12 @@ class FaugusRun:
         if self.discrete_gpu == None:
             discrete_gpu = "DRI_PRIME=1"
 
-        if self.runinprefix:
+        if self.runinprefix and "UMU_NO_PROTON" not in self.message:
             self.message = f'PROTON_VERB=runinprefix {self.message}'
 
         if "WINEPREFIX" not in self.message:
             if self.default_runner:
-                if "PROTONPATH" not in self.message:
+                if "PROTONPATH" not in self.message or "UMU_NO_PROTON" not in self.message:
                     self.message = f'WINEPREFIX={self.default_prefix}/default PROTONPATH={self.default_runner} {self.message}'
                 else:
                     self.message = f'WINEPREFIX={self.default_prefix}/default {self.message}'

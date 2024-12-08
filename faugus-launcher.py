@@ -689,7 +689,8 @@ class Main(Gtk.Window):
             protonfix = game.protonfix
             runner = game.runner
 
-            runinprefix = self.checkbox_runinprefix.get_active()
+            if runner != "Linux-Native":
+                runinprefix = self.checkbox_runinprefix.get_active()
 
             gamemode_enabled = os.path.exists(gamemoderun) or os.path.exists("/usr/games/gamemoderun")
             gamemode = game.gamemode if gamemode_enabled else ""
@@ -1343,7 +1344,8 @@ class Main(Gtk.Window):
         protonfix = game.protonfix
         runner = game.runner
 
-        runinprefix = self.checkbox_runinprefix.get_active()
+        if runner != "Linux-Native":
+            runinprefix = self.checkbox_runinprefix.get_active()
 
         mangohud = "MANGOHUD=1" if game.mangohud else ""
         gamemode = "gamemoderun" if game.gamemode else ""
@@ -2886,12 +2888,15 @@ class AddGame(Gtk.Dialog):
 
             runner = self.combo_box_runner.get_active_text()
 
-            runinprefix = self.checkbox_runinprefix.get_active()
+            if runner != "Linux-Native":
+                runinprefix = self.checkbox_runinprefix.get_active()
 
             if runner == "UMU-Proton Latest":
                 runner = ""
             if runner == "GE-Proton Latest (default)":
                 runner = "GE-Proton"
+            if runner == "Linux-Native":
+                edit_game_dialog.combo_box_launcher.set_active(1)
 
             command_parts = []
 
@@ -2904,9 +2909,12 @@ class AddGame(Gtk.Dialog):
                 if title_formatted:
                     command_parts.append(f'GAMEID={title_formatted}')
                 if runner:
-                    command_parts.append(f'PROTONPATH={runner}')
-                if runinprefix:
-                    command_parts.append(f'PROTON_VERB=runinprefix')
+                    if runner == "Linux-Native":
+                        command_parts.append(f'UMU_NO_PROTON=1')
+                    else:
+                        command_parts.append(f'PROTONPATH={runner}')
+                        if runinprefix:
+                            command_parts.append(f'PROTON_VERB=runinprefix')
                 command_parts.append(f'"{umu_run}" "{file_run}"')
             else:
                 if prefix:
