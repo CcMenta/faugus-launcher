@@ -235,12 +235,16 @@ class FaugusRun:
         grid.attach(image, 0, 0, 1, 1)
 
         protonpath = next((part.split('=')[1] for part in self.message.split() if part.startswith("PROTONPATH=")), None)
+        if "UMU_NO_PROTON" in self.message:
+            protonpath = "Running linux native"
         if protonpath == "Using UMU-Proton":
             protonpath = "UMU-Proton Latest"
         if not protonpath:
             protonpath = "Using UMU-Proton Latest"
         else:
-            protonpath = f"Using {protonpath}"
+            if "UMU_NO_PROTON" not in self.message:
+                protonpath = f"Using {protonpath}"
+
         print(protonpath)
 
         self.label = Gtk.Label(label=protonpath)

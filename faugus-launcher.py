@@ -652,13 +652,13 @@ class Main(Gtk.Window):
             if not os.path.exists(autostart_path):
                 with open(autostart_path, "w") as f:
                     f.write("""[Desktop Entry]
-    Categories=Utility;
-    Exec=faugus-launcher %f hide
-    Icon=faugus-launcher
-    MimeType=application/x-ms-dos-executable;application/x-msi;application/x-ms-shortcut;application/x-bat;text/x-ms-regedit
-    Name=Faugus Launcher
-    Type=Application
-    """)
+        Categories=Utility;
+        Exec=faugus-launcher %f hide
+        Icon=faugus-launcher
+        MimeType=application/x-ms-dos-executable;application/x-msi;application/x-ms-shortcut;application/x-bat;text/x-ms-regedit
+        Name=Faugus Launcher
+        Type=Application
+        """)
         else:
             # Delete the autostart file if it exists
             if os.path.exists(autostart_path):
@@ -689,9 +689,6 @@ class Main(Gtk.Window):
             protonfix = game.protonfix
             runner = game.runner
 
-            if runner != "Linux-Native":
-                runinprefix = self.checkbox_runinprefix.get_active()
-
             gamemode_enabled = os.path.exists(gamemoderun) or os.path.exists("/usr/games/gamemoderun")
             gamemode = game.gamemode if gamemode_enabled else ""
 
@@ -716,8 +713,6 @@ class Main(Gtk.Window):
                     command_parts.append(f'UMU_NO_PROTON=1')
                 else:
                     command_parts.append(f'PROTONPATH={runner}')
-                    if runinprefix:
-                        command_parts.append(f'PROTON_VERB=runinprefix')
             if gamemode:
                 command_parts.append(gamemode)
             if launch_arguments:
@@ -779,10 +774,10 @@ class Main(Gtk.Window):
     def on_button_kill_clicked(self, widget):
         # Handle kill button click event
         subprocess.run(r"""
-    for pid in $(ls -l /proc/*/exe 2>/dev/null | grep -E 'wine(64)?-preloader|wineserver|winedevice.exe' | awk -F'/' '{print $3}'); do
+        for pid in $(ls -l /proc/*/exe 2>/dev/null | grep -E 'wine(64)?-preloader|wineserver|winedevice.exe' | awk -F'/' '{print $3}'); do
         kill -9 "$pid"
-    done
-""", shell=True)
+        done
+        """, shell=True)
         self.game_running = None
         self.game_running2 = False
 
@@ -1344,9 +1339,6 @@ class Main(Gtk.Window):
         protonfix = game.protonfix
         runner = game.runner
 
-        if runner != "Linux-Native":
-            runinprefix = self.checkbox_runinprefix.get_active()
-
         mangohud = "MANGOHUD=1" if game.mangohud else ""
         gamemode = "gamemoderun" if game.gamemode else ""
         sc_controller = "SC_CONTROLLER=1" if game.sc_controller else ""
@@ -1377,8 +1369,6 @@ class Main(Gtk.Window):
                 command_parts.append(f'UMU_NO_PROTON=1')
             else:
                 command_parts.append(f'PROTONPATH={runner}')
-                if runinprefix:
-                    command_parts.append(f'PROTON_VERB=runinprefix')
         if gamemode:
             command_parts.append(gamemode)
         if launch_arguments:
@@ -1396,13 +1386,13 @@ class Main(Gtk.Window):
 
         # Create a .desktop file
         desktop_file_content = f"""[Desktop Entry]
-    Name={game.title}
-    Exec={faugus_run} "{command}"
-    Icon={new_icon_path}
-    Type=Application
-    Categories=Game;
-    Path={game_directory}
-    """
+        Name={game.title}
+        Exec={faugus_run} "{command}"
+        Icon={new_icon_path}
+        Type=Application
+        Categories=Game;
+        Path={game_directory}
+        """
 
         # Check if the destination directory exists and create if it doesn't
         applications_directory = app_dir
@@ -2888,8 +2878,6 @@ class AddGame(Gtk.Dialog):
 
             runner = self.combo_box_runner.get_active_text()
 
-            if runner != "Linux-Native":
-                runinprefix = self.checkbox_runinprefix.get_active()
 
             if runner == "UMU-Proton Latest":
                 runner = ""
@@ -2913,8 +2901,6 @@ class AddGame(Gtk.Dialog):
                         command_parts.append(f'UMU_NO_PROTON=1')
                     else:
                         command_parts.append(f'PROTONPATH={runner}')
-                        if runinprefix:
-                            command_parts.append(f'PROTON_VERB=runinprefix')
                 command_parts.append(f'"{umu_run}" "{file_run}"')
             else:
                 if prefix:
@@ -2922,9 +2908,10 @@ class AddGame(Gtk.Dialog):
                 if title_formatted:
                     command_parts.append(f'GAMEID={title_formatted}')
                 if runner:
-                    command_parts.append(f'PROTONPATH={runner}')
-                if runinprefix:
-                    command_parts.append(f'PROTON_VERB=runinprefix')
+                    if runner == "Linux-Native":
+                        command_parts.append(f'UMU_NO_PROTON=1')
+                    else:
+                        command_parts.append(f'PROTONPATH={runner}')
                 command_parts.append(f'"{umu_run}" regedit "{file_run}"')
 
             # Join all parts into a single command
@@ -3132,7 +3119,6 @@ class AddGame(Gtk.Dialog):
 
         runner = self.combo_box_runner.get_active_text()
 
-        runinprefix = self.checkbox_runinprefix.get_active()
 
         if runner == "UMU-Proton Latest":
             runner = ""
@@ -3149,8 +3135,6 @@ class AddGame(Gtk.Dialog):
             command_parts.append(f'GAMEID={title_formatted}')
         if runner:
             command_parts.append(f'PROTONPATH={runner}')
-        if runinprefix:
-            command_parts.append(f'PROTON_VERB=runinprefix')
 
         # Add the fixed command and remaining arguments
         command_parts.append(f'"{umu_run}"')
@@ -3191,7 +3175,6 @@ class AddGame(Gtk.Dialog):
 
         runner = self.combo_box_runner.get_active_text()
 
-        runinprefix = self.checkbox_runinprefix.get_active()
 
         if runner == "UMU-Proton Latest":
             runner = ""
@@ -3208,8 +3191,7 @@ class AddGame(Gtk.Dialog):
         command_parts.append(f'STORE=none')
         if runner:
             command_parts.append(f'PROTONPATH={runner}')
-        if runinprefix:
-            command_parts.append(f'PROTON_VERB=runinprefix')
+
 
         # Add the fixed command and remaining arguments
         command_parts.append(f'"{umu_run}"')
