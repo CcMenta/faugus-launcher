@@ -2331,13 +2331,13 @@ class AddGame(Gtk.Dialog):
         self.grid0.set_margin_end(10)
         self.grid0.set_margin_top(10)
 
-        grid = Gtk.Grid()
-        grid.set_row_spacing(10)
-        grid.set_column_spacing(10)
-        grid.set_margin_start(10)
-        grid.set_margin_end(10)
-        grid.set_margin_top(10)
-        grid.set_margin_bottom(10)
+        self.grid = Gtk.Grid()
+        self.grid.set_row_spacing(10)
+        self.grid.set_column_spacing(10)
+        self.grid.set_margin_start(10)
+        self.grid.set_margin_end(10)
+        self.grid.set_margin_top(10)
+        self.grid.set_margin_bottom(10)
 
         self.grid1 = Gtk.Grid()
         self.grid1.set_row_spacing(10)
@@ -2531,10 +2531,10 @@ class AddGame(Gtk.Dialog):
         self.entry_path.set_hexpand(True)
         self.grid1.attach(self.button_search, 3, 3, 1, 1)
 
-        grid.attach(self.label_prefix, 0, 4, 1, 1)
-        grid.attach(self.entry_prefix, 0, 5, 3, 1)
+        self.grid.attach(self.label_prefix, 0, 4, 1, 1)
+        self.grid.attach(self.entry_prefix, 0, 5, 3, 1)
         self.entry_prefix.set_hexpand(True)
-        grid.attach(self.button_search_prefix, 3, 5, 1, 1)
+        self.grid.attach(self.button_search_prefix, 3, 5, 1, 1)
 
         self.grid5.attach(self.label_runner, 0, 6, 1, 1)
         self.grid5.attach(self.combo_box_runner, 0, 7, 1, 1)
@@ -2542,7 +2542,7 @@ class AddGame(Gtk.Dialog):
 
         page1.add(self.grid0)
         page1.add(self.grid1)
-        page1.add(grid)
+        page1.add(self.grid)
 
         page1.add(self.grid5)
 
@@ -2648,10 +2648,11 @@ class AddGame(Gtk.Dialog):
         self.show_all()
 
     def on_combobox_changed(self, combo_box):
-        active_index = combo_box.get_active()
+        self.active_index = combo_box.get_active()
 
-        if active_index == 0:
+        if self.active_index == 0:
             self.grid1.set_visible(True)
+            self.grid.set_visible(True) # self.grid is the prefix part of the 'New Game/App' and 'Edit [game/app]' menu
             self.grid5.set_visible(True)
             self.button_winetricks.set_visible(True)
             self.button_winecfg.set_visible(True)
@@ -2665,8 +2666,9 @@ class AddGame(Gtk.Dialog):
             self.entry_path.set_text("")
 
 
-        elif active_index == 1:
+        elif self.active_index == 1:
             self.grid1.set_visible(True)
+            self.grid.set_visible(False)
             self.grid5.set_visible(False)
             self.button_winetricks.set_visible(False)
             self.button_winecfg.set_visible(False)
@@ -2680,8 +2682,9 @@ class AddGame(Gtk.Dialog):
             self.entry_path.set_text("")
 
             self.button_shortcut_icon.set_image(self.set_image_shortcut_icon())
-        elif active_index == 2:
+        elif self.active_index == 2:
             self.grid1.set_visible(False)
+            self.grid.set_visible(True)
             self.grid5.set_visible(True)
             self.button_winetricks.set_visible(True)
             self.button_winecfg.set_visible(True)
@@ -2700,8 +2703,9 @@ class AddGame(Gtk.Dialog):
             image = Gtk.Image.new_from_file(self.icon_temp)
             image.set_from_pixbuf(scaled_pixbuf)
             self.button_shortcut_icon.set_image(image)
-        elif active_index == 3:
+        elif self.active_index == 3:
             self.grid1.set_visible(False)
+            self.grid.set_visible(True)
             self.grid5.set_visible(True)
             self.button_winetricks.set_visible(True)
             self.button_winecfg.set_visible(True)
@@ -2720,8 +2724,9 @@ class AddGame(Gtk.Dialog):
             image = Gtk.Image.new_from_file(self.icon_temp)
             image.set_from_pixbuf(scaled_pixbuf)
             self.button_shortcut_icon.set_image(image)
-        elif active_index == 4:
+        elif self.active_index == 4:
             self.grid1.set_visible(False)
+            self.grid.set_visible(True)
             self.grid5.set_visible(True)
             self.button_winetricks.set_visible(True)
             self.button_winecfg.set_visible(True)
@@ -2740,8 +2745,9 @@ class AddGame(Gtk.Dialog):
             image = Gtk.Image.new_from_file(self.icon_temp)
             image.set_from_pixbuf(scaled_pixbuf)
             self.button_shortcut_icon.set_image(image)
-        elif active_index == 5:
+        elif self.active_index == 5:
             self.grid1.set_visible(False)
+            self.grid.set_visible(True)
             self.grid5.set_visible(True)
             self.button_winetricks.set_visible(True)
             self.button_winecfg.set_visible(True)
@@ -3099,7 +3105,10 @@ class AddGame(Gtk.Dialog):
         title_formatted = title_formatted.replace(' ', '-')
         title_formatted = '-'.join(title_formatted.lower().split())
         self.default_prefix = self.load_default_prefix()
-        prefix = os.path.expanduser(self.default_prefix) + "/" + title_formatted
+        if self.active_index == 1:
+            prefix = os.path.expanduser(self.default_prefix) + "/default"
+        else:
+            prefix = os.path.expanduser(self.default_prefix) + "/" + title_formatted
         self.entry_prefix.set_text(prefix)
 
     def on_button_winecfg_clicked(self, widget):
