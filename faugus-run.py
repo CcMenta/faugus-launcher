@@ -96,6 +96,14 @@ class FaugusRun:
             self.set_ld_preload()
             self.message = f'LD_PRELOAD={self.ld_preload} {self.message}'
 
+        if not "winetricks-gui" in self.message:
+            for part in self.message.split():
+                if part.startswith("GAMEID="):
+                    game_id = part.split("=")[1]
+                    if "umu" not in game_id:
+                        self.message = f'PROTONFIXES_DISABLE=1 {self.message}'
+                    break
+
         print(self.message)
 
         if "UMU_NO_PROTON" not in self.message:
@@ -157,11 +165,11 @@ class FaugusRun:
             self.default_prefix = config_dict.get('default-prefix', '')
             self.runinprefix = config_dict.get('runinprefix', 'False') == 'True'
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False")
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False","False","False")
             self.default_runner = "GE-Proton"
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state,
-                    default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, checkbox_runinprefix):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state,default_runner, checkbox_discrete_gpu_state,
+                    checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, checkbox_runinprefix, checkbox_big_interface, checkbox_start_maximized):
         config_file = config_file_dir
 
         config_path = faugus_launcher_dir
@@ -192,6 +200,8 @@ class FaugusRun:
         config['system-tray'] = checkbox_system_tray
         config['start-boot'] = checkbox_start_boot
         config['runinprefix'] = checkbox_runinprefix
+        config['big_interface'] = checkbox_big_interface
+        config['start-maximized'] = checkbox_start_maximized
 
         with open(config_file, 'w') as f:
             for key, value in config.items():
