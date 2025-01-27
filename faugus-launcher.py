@@ -125,7 +125,7 @@ class Main(Gtk.Window):
 
         config_file = config_file_dir
         if not os.path.exists(config_file):
-            self.save_config("False", prefixes_dir, "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "", "False", "False")
+            self.save_config("False", prefixes_dir, "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "", "False", "False","False")
 
         self.games = []
 
@@ -852,8 +852,9 @@ class Main(Gtk.Window):
             self.api_key = config_dict.get('api-key', '').strip('"')
             self.start_fullscreen = config_dict.get('start-fullscreen', 'False') == 'True'
             self.gamepad_navigation = config_dict.get('gamepad-navigation', 'False') == 'True'
+            self.run_in_prefix = config_dict.get('run-in-prefix', 'False') == 'True'
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "", "False", "False")
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "", "False", "False", "False")
 
     def create_tray_menu(self):
         # Create the tray menu
@@ -1153,6 +1154,7 @@ class Main(Gtk.Window):
         self.entry_api_key = settings_dialog.entry_api_key
         self.checkbox_start_fullscreen = settings_dialog.checkbox_start_fullscreen
         self.checkbox_gamepad_navigation = settings_dialog.checkbox_gamepad_navigation
+        self.checkbox_run_in_prefix = settings_dialog.checkbox_run_in_prefix
 
         self.checkbox_mangohud = settings_dialog.checkbox_mangohud
         self.checkbox_gamemode = settings_dialog.checkbox_gamemode
@@ -1170,6 +1172,7 @@ class Main(Gtk.Window):
         entry_api_key = self.entry_api_key.get_text()
         checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
         checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
+        checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
 
         mangohud_state = self.checkbox_mangohud.get_active()
         gamemode_state = self.checkbox_gamemode.get_active()
@@ -1187,7 +1190,7 @@ class Main(Gtk.Window):
             if not validation_result:
                 return
 
-            self.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation)
+            self.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix)
             self.manage_autostart_file(checkbox_start_boot)
 
             if checkbox_system_tray:
@@ -1371,9 +1374,7 @@ class Main(Gtk.Window):
 
             # Add the fixed command and remaining arguments
             command_parts.append(f'"{umu_run}"')
-            if addapp_checkbox == "addapp_enabled":
-                command_parts.append(f'"{addapp_bat}"')
-            elif path:
+            if path:
                 command_parts.append(f'"{path}"')
             if game_arguments:
                 command_parts.append(f'{game_arguments}')
@@ -1388,8 +1389,8 @@ class Main(Gtk.Window):
             # Save the game title to the latest_games.txt file
             self.update_latest_games_file(title)
 
-            if lock.is_locked:
-                lock.release()
+            if os.path.exists(lock_file_path):
+                    os.remove(lock_file_path)
 
             # Launch the game with subprocess
             if self.load_close_onlaunch() and not faugus_session:
@@ -2066,8 +2067,6 @@ class Main(Gtk.Window):
             title_formatted = title_formatted.replace(' ', '-')
             title_formatted = '-'.join(title_formatted.lower().split())
 
-            game.addapp_bat = f"{os.path.dirname(game.path)}/faugus-{title_formatted}.bat"
-
             if self.interface_mode == "Banners":
                 banner = os.path.join(banners_dir, f"{title_formatted}.png")
                 temp_banner_path = edit_game_dialog.banner_path_temp
@@ -2101,11 +2100,6 @@ class Main(Gtk.Window):
 
             # Call add_remove_shortcut method
             self.add_shortcut(game, shortcut_state, icon_temp, icon_final)
-
-            if game.addapp_checkbox == True:
-                with open(game.addapp_bat, "w") as bat_file:
-                    bat_file.write(f'start "" "z:{game.addapp}"\n')
-                    bat_file.write(f'start "" "z:{game.path}"\n')
 
             # Save changes and update UI
             self.save_games()
@@ -2188,9 +2182,7 @@ class Main(Gtk.Window):
 
         # Add the fixed command and remaining arguments
         command_parts.append(f"'{umu_run}'")
-        if addapp == "addapp_enabled":
-            command_parts.append(f"'{addapp_bat}'")
-        elif path:
+        if path:
             command_parts.append(f"'{path}'")
         if game_arguments:
             command_parts.append(f"{game_arguments}")
@@ -2377,7 +2369,7 @@ class Main(Gtk.Window):
         with open("games.json", "w", encoding="utf-8") as file:
             json.dump(games_data, file, ensure_ascii=False, indent=4)
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix):
         # Path to the configuration file
         config_file = os.path.join(self.working_directory, 'config.ini')
 
@@ -2409,6 +2401,7 @@ class Main(Gtk.Window):
         config['api-key'] = entry_api_key
         config['start-fullscreen'] = checkbox_start_fullscreen
         config['gamepad-navigation'] = checkbox_gamepad_navigation
+        config['run-in-prefix'] = checkbox_run_in_prefix
 
         # Write configurations back to the file
         with open(config_file, 'w') as f:
@@ -2531,6 +2524,10 @@ class Settings(Gtk.Dialog):
         # Create checkbox for 'Splash screen' option
         self.checkbox_splash_disable = Gtk.CheckButton(label="Disable splash window")
         self.checkbox_splash_disable.set_active(False)
+
+        # Create checkbox for 'Run multiple games in the same prefix' option
+        self.checkbox_run_in_prefix = Gtk.CheckButton(label="Run multiple games in the same prefix")
+        self.checkbox_run_in_prefix.set_active(False)
 
         # Button Winetricks
         self.button_winetricks_default = Gtk.Button(label="Winetricks")
@@ -2682,6 +2679,7 @@ class Settings(Gtk.Dialog):
         grid_miscellaneous.attach(self.checkbox_system_tray, 0, 4, 1, 1)
         grid_miscellaneous.attach(self.checkbox_start_boot, 0, 5, 1, 1)
         grid_miscellaneous.attach(self.checkbox_close_after_launch, 0, 6, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_run_in_prefix, 0, 7, 1, 1)
 
         grid_interface_mode.attach(self.label_interface, 0, 0, 1, 1)
         grid_interface_mode.attach(self.combo_box_interface, 0, 1, 1, 1)
@@ -2870,6 +2868,7 @@ class Settings(Gtk.Dialog):
             entry_api_key = self.entry_api_key.get_text()
             checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
             checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
+            checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
 
             mangohud_state = self.checkbox_mangohud.get_active()
             gamemode_state = self.checkbox_gamemode.get_active()
@@ -3025,6 +3024,7 @@ class Settings(Gtk.Dialog):
             entry_api_key = self.entry_api_key.get_text()
             checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
             checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
+            checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
 
             mangohud_state = self.checkbox_mangohud.get_active()
             gamemode_state = self.checkbox_gamemode.get_active()
@@ -3036,7 +3036,7 @@ class Settings(Gtk.Dialog):
             if default_runner == "GE-Proton Latest (default)":
                 default_runner = "GE-Proton"
 
-            self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation)
+            self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix)
             self.set_sensitive(False)
 
             self.parent.manage_autostart_file(checkbox_start_boot)
@@ -3105,6 +3105,7 @@ class Settings(Gtk.Dialog):
             entry_api_key = self.entry_api_key.get_text()
             checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
             checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
+            checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
 
             mangohud_state = self.checkbox_mangohud.get_active()
             gamemode_state = self.checkbox_gamemode.get_active()
@@ -3116,7 +3117,7 @@ class Settings(Gtk.Dialog):
             if default_runner == "GE-Proton Latest (default)":
                 default_runner = "GE-Proton"
 
-            self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation)
+            self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix)
             self.set_sensitive(False)
 
             self.parent.manage_autostart_file(checkbox_start_boot)
@@ -3237,6 +3238,7 @@ class Settings(Gtk.Dialog):
             self.api_key = config_dict.get('api-key', '').strip('"')
             start_fullscreen = config_dict.get('start-fullscreen', 'False') == 'True'
             gamepad_navigation = config_dict.get('gamepad-navigation', 'False') == 'True'
+            run_in_prefix = config_dict.get('run-in-prefix', 'False') == 'True'
 
             self.checkbox_close_after_launch.set_active(close_on_launch)
             self.entry_default_prefix.set_text(self.default_prefix)
@@ -3261,6 +3263,7 @@ class Settings(Gtk.Dialog):
             self.checkbox_start_maximized.set_active(start_maximized)
             self.checkbox_start_fullscreen.set_active(start_fullscreen)
             self.checkbox_gamepad_navigation.set_active(gamepad_navigation)
+            self.checkbox_run_in_prefix.set_active(run_in_prefix)
 
             model = self.combo_box_interface.get_model()
             index_to_activate2 = 0
@@ -3822,11 +3825,6 @@ class AddGame(Gtk.Dialog):
         self.grid_game_arguments.attach(self.entry_game_arguments, 0, 1, 4, 1)
         self.entry_game_arguments.set_hexpand(True)
 
-        self.grid_addapp.attach(self.checkbox_addapp, 0, 0, 1, 1)
-        self.grid_addapp.attach(self.entry_addapp, 0, 1, 3, 1)
-        self.entry_addapp.set_hexpand(True)
-        self.grid_addapp.attach(self.button_search_addapp, 3, 1, 1, 1)
-
         self.grid_tools.attach(self.checkbox_mangohud, 0, 0, 1, 1)
         self.checkbox_mangohud.set_hexpand(True)
         self.grid_tools.attach(self.checkbox_gamemode, 0, 1, 1, 1)
@@ -3840,7 +3838,6 @@ class AddGame(Gtk.Dialog):
         page2.add(self.grid_protonfix)
         page2.add(self.grid_launch_arguments)
         page2.add(self.grid_game_arguments)
-        page2.add(self.grid_addapp)
         page2.add(self.grid_tools)
 
         bottom_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -4707,7 +4704,10 @@ class AddGame(Gtk.Dialog):
         title_formatted = title_formatted.replace(' ', '-')
         title_formatted = '-'.join(title_formatted.lower().split())
         self.default_prefix = self.load_default_prefix()
-        prefix = os.path.expanduser(self.default_prefix) + "/" + title_formatted
+        if self.combo_box_launcher.get_active() == 1:
+            prefix = os.path.expanduser(self.default_prefix) + "/default"
+        else:
+            prefix = os.path.expanduser(self.default_prefix) + "/" + title_formatted
         self.entry_prefix.set_text(prefix)
 
     def on_button_winecfg_clicked(self, widget):
@@ -5200,11 +5200,6 @@ class CreateShortcut(Gtk.Window):
         self.grid_game_arguments.attach(self.entry_game_arguments, 0, 1, 4, 1)
         self.entry_game_arguments.set_hexpand(True)
 
-        self.grid_addapp.attach(self.label_addapp, 0, 0, 1, 1)
-        self.grid_addapp.attach(self.entry_addapp, 0, 1, 3, 1)
-        self.entry_addapp.set_hexpand(True)
-        self.grid_addapp.attach(self.button_search_addapp, 3, 1, 1, 1)
-
         self.grid_tools = Gtk.Grid(orientation=Gtk.Orientation.VERTICAL)
         self.grid_tools.set_row_spacing(10)
         self.grid_tools.set_column_spacing(10)
@@ -5249,7 +5244,6 @@ class CreateShortcut(Gtk.Window):
         self.main_grid.add(self.grid_protonfix)
         self.main_grid.add(self.grid_launch_arguments)
         self.main_grid.add(self.grid_game_arguments)
-        self.main_grid.add(self.grid_addapp)
         self.main_grid.add(self.box_tools)
 
         self.load_config()
@@ -5325,77 +5319,6 @@ class CreateShortcut(Gtk.Window):
         # Connect the destroy signal to Gtk.main_quit
         self.connect("destroy", Gtk.main_quit)
 
-    def on_button_search_addapp_clicked(self, widget):
-        dialog = Gtk.Dialog(title="Select an additional application", parent=self, flags=0)
-        dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
-
-        filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
-        filechooser.set_current_folder(os.path.expanduser("~/"))
-        filechooser.connect("file-activated", lambda widget: dialog.response(Gtk.ResponseType.OK))
-
-        windows_filter = Gtk.FileFilter()
-        windows_filter.set_name("Windows files")
-        windows_filter.add_pattern("*.exe")
-        windows_filter.add_pattern("*.msi")
-        windows_filter.add_pattern("*.bat")
-        windows_filter.add_pattern("*.lnk")
-        windows_filter.add_pattern("*.reg")
-
-        all_files_filter = Gtk.FileFilter()
-        all_files_filter.set_name("All files")
-        all_files_filter.add_pattern("*")
-
-        filter_combobox = Gtk.ComboBoxText()
-        filter_combobox.append("windows", "Windows files")
-        filter_combobox.append("all", "All files")
-        filter_combobox.set_active(0)
-        filter_combobox.set_size_request(150, -1)
-
-        def on_filter_changed(combobox):
-            active_id = combobox.get_active_id()
-            if active_id == "windows":
-                filechooser.set_filter(windows_filter)
-            elif active_id == "all":
-                filechooser.set_filter(all_files_filter)
-
-        filter_combobox.connect("changed", on_filter_changed)
-        filechooser.set_filter(windows_filter)
-
-        button_open = Gtk.Button.new_with_label("Open")
-        button_open.connect("clicked", lambda w: dialog.response(Gtk.ResponseType.OK))
-        button_open.set_size_request(150, -1)
-
-        button_cancel = Gtk.Button.new_with_label("Cancel")
-        button_cancel.connect("clicked", lambda w: dialog.response(Gtk.ResponseType.CANCEL))
-        button_cancel.set_size_request(150, -1)
-
-        button_grid = Gtk.Grid()
-        button_grid.set_row_spacing(10)
-        button_grid.set_column_spacing(10)
-        button_grid.set_margin_start(10)
-        button_grid.set_margin_end(10)
-        button_grid.set_margin_top(10)
-        button_grid.set_margin_bottom(10)
-        button_grid.attach(button_open, 1, 1, 1, 1)
-        button_grid.attach(button_cancel, 0, 1, 1, 1)
-        button_grid.attach(filter_combobox, 1, 0, 1, 1)
-
-        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        button_box.pack_end(button_grid, False, False, 0)
-
-        dialog.vbox.pack_start(filechooser, True, True, 0)
-        dialog.vbox.pack_start(button_box, False, False, 0)
-
-        dialog.show_all()
-        response = dialog.run()
-
-        if response == Gtk.ResponseType.OK:
-            self.entry_addapp.set_text(filechooser.get_filename())
-
-        dialog.destroy()
-
     def find_largest_resolution(self, directory):
         largest_image = None
         largest_resolution = (0, 0)  # (width, height)
@@ -5444,7 +5367,7 @@ class CreateShortcut(Gtk.Window):
             # Save default configuration if file does not exist
             self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "", "False", "False")
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix):
         # Path to the configuration file
         config_file = config_file_dir
 
@@ -5484,6 +5407,7 @@ class CreateShortcut(Gtk.Window):
         config['api-key'] = entry_api_key
         config['start-fullscreen'] = checkbox_start_fullscreen
         config['gamepad-navigation'] = checkbox_gamepad_navigation
+        config['run-in-prefix'] = checkbox_run_in_prefix
 
         # Write configurations back to the file
         with open(config_file, 'w') as f:
@@ -5516,12 +5440,6 @@ class CreateShortcut(Gtk.Window):
         title_formatted = '-'.join(title_formatted.lower().split())
 
         addapp = self.entry_addapp.get_text()
-        addapp_bat = f"{os.path.dirname(self.file_path)}/faugus-{title_formatted}.bat"
-
-        if self.entry_addapp.get_text():
-            with open(addapp_bat, "w") as bat_file:
-                bat_file.write(f'start "" "z:{addapp}"\n')
-                bat_file.write(f'start "" "z:{self.file_path}"\n')
 
         if os.path.isfile(os.path.expanduser(self.icon_temp)):
             os.rename(os.path.expanduser(self.icon_temp),f'{self.icons_path}/{title_formatted}.ico')
@@ -5565,9 +5483,7 @@ class CreateShortcut(Gtk.Window):
 
         # Add the fixed command and remaining arguments
         command_parts.append(f"'{umu_run}'")
-        if self.entry_addapp.get_text():
-            command_parts.append(f"'{addapp_bat}'")
-        elif self.file_path:
+        if self.file_path:
             command_parts.append(f"'{self.file_path}'")
         if game_arguments:
             command_parts.append(f"{game_arguments}")
