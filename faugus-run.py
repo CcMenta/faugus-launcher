@@ -40,6 +40,7 @@ class FaugusRun:
         self.default_prefix = None
         self.discrete_gpu = None
         self.splash_disable = None
+        self.run_in_prefix = None
 
     def show_error_dialog(self, protonpath):
         dialog = Gtk.Dialog(title="Faugus Launcher")
@@ -120,6 +121,9 @@ class FaugusRun:
         if self.discrete_gpu == None:
             discrete_gpu = "DRI_PRIME=1"
 
+        if self.run_in_prefix and "UMU_NO_PROTON" not in self.message:
+            self.message = f'PROTON_VERB=run {self.message}'
+
         if "WINEPREFIX" not in self.message:
             if self.default_runner:
                 if "PROTONPATH" not in self.message:
@@ -192,11 +196,12 @@ class FaugusRun:
             self.splash_disable = config_dict.get('splash-disable', 'False') == 'True'
             self.default_runner = config_dict.get('default-runner', '')
             self.default_prefix = config_dict.get('default-prefix', '')
+            self.run_in_prefix = config_dict.get('run-in-prefix', 'False') == 'True'
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "", "False", "False")
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "", "False", "False", "False")
             self.default_runner = "GE-Proton"
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, sc_controller_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, entry_api_key, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix):
         config_file = config_file_dir
 
         config_path = faugus_launcher_dir
@@ -231,6 +236,7 @@ class FaugusRun:
         config['api-key'] = entry_api_key
         config['start-fullscreen'] = checkbox_start_fullscreen
         config['gamepad-navigation'] = checkbox_gamepad_navigation
+        config['run-in-prefix'] = checkbox_run_in_prefix
 
         with open(config_file, 'w') as f:
             for key, value in config.items():

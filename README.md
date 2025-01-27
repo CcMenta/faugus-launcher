@@ -35,7 +35,7 @@ sudo dpkg --add-architecture i386
 sudo apt update
 sudo apt install -y wget
 mkdir -p ~/faugus-launcher
-wget -P ~/faugus-launcher https://github.com/Faugus/faugus-launcher/releases/download/1.2.9/faugus-launcher_1.2.9-1_amd64.deb
+wget -P ~/faugus-launcher https://github.com/Faugus/faugus-launcher/releases/download/1.2.8/faugus-launcher_1.2.8-1_amd64.deb
 wget -P ~/faugus-launcher https://github.com/Faugus/faugus-launcher/releases/download/1.2.6/python3-umu-launcher_1.1.4-1_amd64.deb
 wget -P ~/faugus-launcher https://github.com/Faugus/faugus-launcher/releases/download/1.2.6/umu-launcher_1.1.4-1_all.deb
 sudo apt install -y ~/faugus-launcher/*.deb
@@ -64,10 +64,10 @@ sudo zypper install -y mangohud
 ```
 
 ### Flatpak (EXPERIMENTAL)
-Download <a href="https://github.com/Faugus/faugus-launcher/releases/download/1.2.9/faugus-launcher-0.2.9-1.flatpak">faugus-launcher-0.2.9-1.flatpak</a> and run:
+Download <a href="https://github.com/Faugus/faugus-launcher/releases/download/1.2.8/faugus-launcher-0.2.8-1.flatpak">faugus-launcher-0.2.8-1.flatpak</a> and run:
 ```
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-flatpak install faugus-launcher-0.2.9-1.flatpak
+flatpak install faugus-launcher-0.2.8-1.flatpak
 ```
 ```
 # Optional tools
@@ -109,9 +109,9 @@ https://github.com/Faugus/faugus-launcher/assets/112667550/04f4f009-4b5a-4642-85
 # Screenshots
 ## Dark theme
 ### Main window
-<img src=https://github.com/user-attachments/assets/6f6fdd3e-857d-4aa2-b7b2-0238bc39125a/><br><br>
-<img src=https://github.com/user-attachments/assets/eb988923-4f0c-4c89-97fb-f9106c90620d/><br><br>
-<img src=https://github.com/user-attachments/assets/19b42740-92fa-4fae-befc-13296c97d029/><br>
+<img src=https://github.com/user-attachments/assets/72b6790e-ce02-4405-aa3d-fa2b3720107c/><br><br>
+<img src=https://github.com/user-attachments/assets/958cd1cb-2917-421e-a28a-0cdca0d60c85/><br><br>
+<img src=https://github.com/user-attachments/assets/3578ef62-fb00-4147-8978-5c2bcb8e7099/><br>
 ### Add/Edit game
 <img src=https://github.com/user-attachments/assets/a6d30723-6120-4c75-9f13-d183696f8b3f/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src=https://github.com/user-attachments/assets/449b3b01-2fd0-47c7-b5b1-eb2759fd5139/><br>
 ### Settings
