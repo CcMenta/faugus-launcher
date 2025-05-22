@@ -2915,6 +2915,10 @@ class Settings(Gtk.Dialog):
         self.checkbox_splash_disable = Gtk.CheckButton(label="Disable splash window")
         self.checkbox_splash_disable.set_active(False)
 
+        # Create checkbox for 'Run multiple games in the same prefix' option
+        self.checkbox_run_in_prefix = Gtk.CheckButton(label="Run multiple games in the same prefix")
+        self.checkbox_run_in_prefix.set_active(False)
+
         # Create checkbox for 'Enable logging' option
         self.checkbox_enable_logging = Gtk.CheckButton(label="Enable logging")
         self.checkbox_enable_logging.set_active(False)
