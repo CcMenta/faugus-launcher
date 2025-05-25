@@ -1,35 +1,99 @@
 #!/usr/bin/env python3
 
 import gi
-
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, GdkPixbuf, Gio
 from threading import Thread
-
+from pathlib import Path
 import atexit
 import sys
 import subprocess
 import argparse
 import re
 import os
+import gettext
+import locale
 
-config_dir = os.getenv('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
-faugus_launcher_dir = f'{config_dir}/faugus-launcher'
-faugus_components = "/usr/bin/faugus-components"
-prefixes_dir = f'{faugus_launcher_dir}/prefixes'
-logs_dir = f'{faugus_launcher_dir}/logs'
-config_file_dir = f'{faugus_launcher_dir}/config.ini'
-share_dir = os.getenv('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
-faugus_png = "/usr/share/icons/hicolor/256x256/apps/faugus-launcher.png"
-faugus_notification = '/usr/share/faugus-launcher/faugus-notification.ogg'
-eac_dir = f'PROTON_EAC_RUNTIME={faugus_launcher_dir}/components/eac'
-be_dir = f'PROTON_BATTLEYE_RUNTIME={faugus_launcher_dir}/components/be'
+class PathManager:
+    @staticmethod
+    def system_data(*relative_paths):
+        xdg_data_dirs = os.getenv('XDG_DATA_DIRS', '/usr/local/share:/usr/share').split(':')
+        for data_dir in xdg_data_dirs:
+            path = Path(data_dir).joinpath(*relative_paths)
+            if path.exists():
+                return str(path)
+        return str(Path(xdg_data_dirs[0]).joinpath(*relative_paths))
+
+    @staticmethod
+    def user_data(*relative_paths):
+        xdg_data_home = Path(os.getenv('XDG_DATA_HOME', Path.home() / '.local/share'))
+        return str(xdg_data_home.joinpath(*relative_paths))
+
+    @staticmethod
+    def user_config(*relative_paths):
+        xdg_config_home = Path(os.getenv('XDG_CONFIG_HOME', Path.home() / '.config'))
+        return str(xdg_config_home.joinpath(*relative_paths))
+
+    @staticmethod
+    def find_binary(binary_name):
+        paths = os.getenv('PATH', '').split(':')
+        for path in paths:
+            binary_path = Path(path) / binary_name
+            if binary_path.exists():
+                return str(binary_path)
+        return f'/usr/bin/{binary_name}'
+
+    @staticmethod
+    def get_icon(icon_name):
+        icon_paths = [
+            PathManager.user_data('icons', icon_name),
+            PathManager.system_data('icons/hicolor/256x256/apps', icon_name),
+            PathManager.system_data('icons', icon_name)
+        ]
+        for path in icon_paths:
+            if Path(path).exists():
+                return path
+        return icon_paths[-1]
+
+    @staticmethod
+    def find_library(lib_name):
+        lib_paths = [
+            Path("/usr/lib") / lib_name,
+            Path("/usr/lib32") / lib_name,
+            Path("/usr/lib/x86_64-linux-gnu") / lib_name,
+            Path("/usr/lib64") / lib_name
+        ]
+        for path in lib_paths:
+            if path.exists():
+                return str(path)
+        return None
+
+faugus_launcher_dir = PathManager.user_config('faugus-launcher')
+faugus_components = PathManager.find_binary('faugus-components')
+prefixes_dir = PathManager.user_config('faugus-launcher/prefixes')
+logs_dir = PathManager.user_config('faugus-launcher/logs')
+config_file_dir = PathManager.user_config('faugus-launcher/config.ini')
+share_dir = PathManager.user_data()
+faugus_png = PathManager.get_icon('faugus-launcher.png')
+faugus_notification = PathManager.system_data('faugus-launcher/faugus-notification.ogg')
+
+eac_dir = f'PROTON_EAC_RUNTIME={PathManager.user_config("faugus-launcher/components/eac")}'
+be_dir = f'PROTON_BATTLEYE_RUNTIME={PathManager.user_config("faugus-launcher/components/be")}'
 
 def remove_ansi_escape(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
 
 faugus_session = False
+
+LOCALE_DIR = (
+    PathManager.system_data('locale')
+    if os.path.isdir(PathManager.system_data('locale'))
+    else os.path.join(os.path.dirname(__file__), 'locale')
+)
+
+locale.setlocale(locale.LC_ALL, '')
+lang = locale.getlocale()[0]
 
 class FaugusRun:
     def __init__(self, message):
@@ -53,14 +117,14 @@ class FaugusRun:
             dialog.fullscreen()
 
         label = Gtk.Label()
-        label.set_label(f"{protonpath} was not found.")
+        label.set_label(_("{path} was not found.").format(path=protonpath))
         label.set_halign(Gtk.Align.CENTER)
 
         label2 = Gtk.Label()
-        label2.set_label("Please install it or use another Proton version.")
+        label2.set_label(_("Please install it or use another Proton version."))
         label2.set_halign(Gtk.Align.CENTER)
 
-        button_yes = Gtk.Button(label="Ok")
+        button_yes = Gtk.Button(label=_("Ok"))
         button_yes.set_size_request(150, -1)
         button_yes.connect("clicked", lambda w: dialog.response(Gtk.ResponseType.OK))
 
@@ -95,14 +159,27 @@ class FaugusRun:
         Gtk.main_quit()
         sys.exit()
 
+    def apply_translation(self, language_code):
+        try:
+            translation = gettext.translation(
+                'faugus-run',
+                localedir=LOCALE_DIR,
+                languages=[language_code]
+            )
+            translation.install()
+            globals()['_'] = translation.gettext
+        except FileNotFoundError:
+            gettext.install('faugus-run', localedir=LOCALE_DIR)
+            globals()['_'] = gettext.gettext
+
     def start_process(self, command):
 
         print(self.message)
 
         protonpath = next((part.split('=')[1] for part in self.message.split() if part.startswith("PROTONPATH=")), None)
         if protonpath and protonpath != "GE-Proton":
-            protonpath_path = f'{share_dir}/Steam/compatibilitytools.d/{protonpath}'
-            if not os.path.isdir(protonpath_path):
+            protonpath_path = Path(share_dir) / 'Steam/compatibilitytools.d' / protonpath
+            if not protonpath_path.is_dir():
                 self.close_warning_dialog()
                 self.show_error_dialog(protonpath)
 
@@ -122,7 +199,7 @@ class FaugusRun:
         if self.run_in_prefix and "UMU_NO_PROTON" not in self.message:
             self.message = f'PROTON_VERB=run {self.message}'
 
-        if "WINEPREFIX" not in self.message:
+        if "WINEPREFIX" not in self.message and "UMU_NO_PROTON" not in self.message:
             if self.default_runner:
                 if "PROTONPATH" not in self.message:
                     self.message = f'WINEPREFIX="{self.default_prefix}/default" PROTONPATH={self.default_runner} {self.message}'
@@ -141,7 +218,8 @@ class FaugusRun:
                     if "umu" not in game_id:
                         self.message = f'PROTONFIXES_DISABLE=1 {self.message}'
                     break
-        if "proton-ge-custom" in self.message:
+
+        if "proton-cachyos" in self.message and "slr" in self.message:
             self.message = f'UMU_NO_RUNTIME=1 {self.message}'
 
         if self.wayland_driver:
@@ -152,20 +230,21 @@ class FaugusRun:
         print(self.message)
 
         match = re.search(r"WINEPREFIX=['\"]([^'\"]+)", self.message)
-        self.game_title = match.group(1).split("/")[-1]
+        try: self.game_title = match.group(1).split("/")[-1]
+        except: self.game_title = "default"
 
         if "UMU_NO_PROTON" not in self.message:
             if self.enable_logging:
                 self.message = f'UMU_LOG=1 PROTON_LOG_DIR={logs_dir}/{self.game_title} PROTON_LOG=1 {self.message}'
             self.process = subprocess.Popen(
-                ["/bin/bash", "-c", f"{faugus_components}; {discrete_gpu} {eac_dir} {be_dir} {self.message}"],
+                [PathManager.find_binary("bash"), "-c", f"{faugus_components}; {discrete_gpu} {eac_dir} {be_dir} {self.message}"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
         else:
             self.process = subprocess.Popen(
-                ["/bin/bash", "-c", f"{discrete_gpu} {eac_dir} {be_dir} {self.message}"],
+                [PathManager.find_binary("bash"), "-c", f"{discrete_gpu} {eac_dir} {be_dir} {self.message}"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
@@ -178,13 +257,11 @@ class FaugusRun:
 
     def set_ld_preload(self):
         lib_paths = [
-            "/usr/lib/libgamemode.so.0",
-            "/usr/lib32/libgamemode.so.0",
-            "/usr/lib/x86_64-linux-gnu/libgamemode.so.0",
-            "/usr/lib64/libgamemode.so.0"
+            PathManager.find_library('libgamemode.so.0'),
+            PathManager.find_library('libgamemodeauto.so.0')
         ]
 
-        ld_preload_paths = [path for path in lib_paths if os.path.exists(path)]
+        ld_preload_paths = [path for path in lib_paths if path]
         self.ld_preload = ":".join(ld_preload_paths)
 
     def load_config(self):
@@ -208,11 +285,12 @@ class FaugusRun:
             self.enable_logging = config_dict.get('enable-logging', 'False') == 'True'
             self.wayland_driver = config_dict.get('wayland-driver', 'False') == 'True'
             self.enable_hdr = config_dict.get('enable-hdr', 'False') == 'True'
+            self.language = config_dict.get('language', '')
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False")
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False", lang)
             self.default_runner = "GE-Proton"
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
         config_file = config_file_dir
 
         config_path = faugus_launcher_dir
@@ -250,6 +328,7 @@ class FaugusRun:
         config['enable-logging'] = checkbox_enable_logging
         config['wayland-driver'] = checkbox_wayland_driver
         config['enable-hdr'] = checkbox_enable_hdr
+        config['language'] = language
 
         with open(config_file, 'w') as f:
             for key, value in config.items():
@@ -258,15 +337,10 @@ class FaugusRun:
                 else:
                     f.write(f'{key}={value}\n')
 
-    def start_scc_daemon(self):
-        working_directory = faugus_launcher_dir
-        try:
-            subprocess.run(["scc-daemon", "controller.sccprofile", "start"], check=True, cwd=working_directory)
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to start scc-daemon: {e}")
-
     def show_warning_dialog(self):
         self.load_config()
+        self.apply_translation(self.language)
+        print(self.language)
         self.warning_dialog = Gtk.Window(title="Faugus Launcher")
         self.warning_dialog.set_decorated(False)
         self.warning_dialog.set_resizable(False)
@@ -306,7 +380,7 @@ class FaugusRun:
             else:
                 protonpath = "Using UMU-Proton Latest"
         else:
-            protonpath = f"Using {protonpath}"
+            protonpath = _("Using {path}").format(path=protonpath)
         print(protonpath)
 
         self.label = Gtk.Label(label=protonpath)
@@ -376,38 +450,36 @@ class FaugusRun:
     def check_game_output(self, clean_line):
         if "Downloading" in clean_line or "Updating BattlEye..." in clean_line or "Updating Easy Anti-Cheat..." in clean_line:
             self.warning_dialog.show_all()
-
         if "Updating BattlEye..." in clean_line:
-            self.label.set_text("Updating BattlEye...")
+            self.label.set_text(_("Updating BattlEye..."))
         if "Updating Easy Anti-Cheat..." in clean_line:
-            self.label.set_text("Updating Easy Anti-Cheat...")
+            self.label.set_text(_("Updating Easy Anti-Cheat..."))
         if "Components are up to date." in clean_line:
-            self.label.set_text("Components are up to date")
-
+            self.label.set_text(_("Components are up to date"))
         if "Downloading GE-Proton" in clean_line:
-            self.label.set_text("Downloading GE-Proton...")
+            self.label.set_text(_("Downloading GE-Proton..."))
         if "Downloading UMU-Proton" in clean_line:
-            self.label.set_text("Downloading UMU-Proton...")
+            self.label.set_text(_("Downloading UMU-Proton..."))
         if "Downloading steamrt3 (latest)" in clean_line:
-            self.label2.set_text("Downloading Steam Runtime...")
+            self.label2.set_text(_("Downloading Steam Runtime..."))
         if "SteamLinuxRuntime_sniper.tar.xz" in clean_line:
-            self.label2.set_text("Extracting Steam Runtime...")
+            self.label2.set_text(_("Extracting Steam Runtime..."))
         if "Extracting GE-Proton" in clean_line:
-            self.label.set_text("Extracting GE-Proton...")
+            self.label.set_text(_("Extracting GE-Proton..."))
         if "Extracting UMU-Proton" in clean_line:
-            self.label.set_text("Extracting UMU-Proton...")
+            self.label.set_text(_("Extracting UMU-Proton..."))
         if "GE-Proton is up to date" in clean_line:
-            self.label.set_text("GE-Proton is up to date")
+            self.label.set_text(_("GE-Proton is up to date"))
         if "UMU-Proton is up to date" in clean_line:
-            self.label.set_text("UMU-Proton is up to date")
+            self.label.set_text(_("UMU-Proton is up to date"))
         if "steamrt3 is up to date" in clean_line:
-            self.label2.set_text("Steam Runtime is up to date")
+            self.label2.set_text(_("Steam Runtime is up to date"))
         if "->" in clean_line and "GE-Proton" in clean_line:
-            self.label.set_text("GE-Proton is up to date")
+            self.label.set_text(_("GE-Proton is up to date"))
         if "->" in clean_line and "UMU-Proton" in clean_line:
-            self.label.set_text("UMU-Proton is up to date")
+            self.label.set_text(_("UMU-Proton is up to date"))
         if "mtree is OK" in clean_line:
-            self.label2.set_text("Steam Runtime is up to date")
+            self.label2.set_text(_("Steam Runtime is up to date"))
 
         if "UMU_NO_PROTON" in self.message:
             if "steamrt3 is up to date" in clean_line or "mtree is OK" in clean_line:
@@ -456,10 +528,10 @@ class FaugusRun:
                     dialog.fullscreen()
 
                 label = Gtk.Label()
-                label.set_label(f"The keys and values were successfully added to the registry.")
+                label.set_label(_("The keys and values were successfully added to the registry."))
                 label.set_halign(Gtk.Align.CENTER)
 
-                button_yes = Gtk.Button(label="Ok")
+                button_yes = Gtk.Button(label=_("Ok"))
                 button_yes.set_size_request(150, -1)
                 button_yes.connect("clicked", lambda w: dialog.response(Gtk.ResponseType.OK))
 
@@ -522,12 +594,6 @@ def handle_command(message, command=None):
     process_thread.join()
     sys.exit(0)
 
-def stop_scc_daemon():
-    try:
-        subprocess.run(["scc-daemon", "stop"], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to stop scc-daemon: {e}")
-
 def apply_dark_theme():
     desktop_env = Gio.Settings.new("org.gnome.desktop.interface")
     try:
@@ -541,7 +607,7 @@ def main():
     global faugus_session
     apply_dark_theme()
     parser = argparse.ArgumentParser(description="Faugus Run")
-    parser.add_argument("message", help="The message to be processed")
+    parser.add_argument("message")
     parser.add_argument("command", nargs='?', default=None)
     parser.add_argument("session", nargs='?', default=None)
 
