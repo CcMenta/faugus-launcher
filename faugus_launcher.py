@@ -4,7 +4,6 @@ import json
 import os
 import re
 import shutil
-import signal
 import socket
 import subprocess
 import sys
@@ -95,7 +94,6 @@ umu_run = PathManager.find_binary('umu-run')
 mangohud_dir = PathManager.find_binary('mangohud')
 gamemoderun = PathManager.find_binary('gamemoderun')
 
-games_txt = PathManager.user_config('faugus-launcher/games.txt')
 games_json = PathManager.user_config('faugus-launcher/games.json')
 latest_games = PathManager.user_config('faugus-launcher/latest-games.txt')
 faugus_launcher_share_dir = PathManager.user_data('faugus-launcher')
@@ -105,7 +103,6 @@ running_games = PathManager.user_data('faugus-launcher/running_games.json')
 lock_file_path = PathManager.user_data('faugus-launcher/faugus-launcher.lock')
 lock = FileLock(lock_file_path, timeout=0)
 
-faugus_session = False
 faugus_backup = False
 
 steam_userdata_path = PathManager.user_data('Steam/userdata')
@@ -139,8 +136,27 @@ LOCALE_DIR = (
     if os.path.isdir(PathManager.system_data('locale'))
     else os.path.join(os.path.dirname(__file__), 'locale')
 )
+
 locale.setlocale(locale.LC_ALL, '')
 lang = locale.getlocale()[0]
+if os.path.exists(config_file_dir):
+    with open(config_file_dir, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('language='):
+                lang = line.split('=', 1)[1].strip()
+                break
+try:
+    translation = gettext.translation(
+        'faugus-launcher',
+        localedir=LOCALE_DIR,
+        languages=[lang]
+    )
+    translation.install()
+    globals()['_'] = translation.gettext
+except FileNotFoundError:
+    gettext.install('faugus-launcher', localedir=LOCALE_DIR)
+    globals()['_'] = gettext.gettext
 
 class Main(Gtk.Window):
     def __init__(self):
@@ -152,8 +168,6 @@ class Main(Gtk.Window):
         self.start_maximized = False
         self.start_fullscreen = False
         self.fullscreen_activated = False
-        self.gamepad_navigation = False
-        self.gamepad_process = False
         self.theme = None
 
         self.game_running = None
@@ -172,9 +186,6 @@ class Main(Gtk.Window):
 
         self.updated_steam_id = None
 
-        if faugus_session:
-            self.fullscreen()
-
         # Define the configuration path
         config_path = faugus_launcher_dir
         # Create the configuration directory if it doesn't exist
@@ -185,7 +196,8 @@ class Main(Gtk.Window):
 
         config_file = config_file_dir
         if not os.path.exists(config_file):
-            self.save_config("False", prefixes_dir, "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False", lang)
+            self.save_config("False", prefixes_dir, "False", "False", "False", "GE-Proton", "True", "False", "False",
+                             "False", "List", "False", "False", "False", "False", "False", lang)
 
         self.provider = Gtk.CssProvider()
         self.provider.load_from_data(b"""
@@ -204,7 +216,6 @@ class Main(Gtk.Window):
         self.check_theme()
 
         self.load_config()
-        self.apply_translation(self.language)
 
         self.context_menu = Gtk.Menu()
 
@@ -242,8 +253,6 @@ class Main(Gtk.Window):
             if self.start_fullscreen:
                 self.fullscreen()
                 self.fullscreen_activated = True
-            if self.gamepad_navigation:
-                self.gamepad_process = subprocess.Popen(["faugus-gamepad"])
             self.big_interface()
         if self.interface_mode == "Banners":
             self.banner_mode = True
@@ -252,8 +261,6 @@ class Main(Gtk.Window):
             if self.start_fullscreen:
                 self.fullscreen()
                 self.fullscreen_activated = True
-            if self.gamepad_navigation:
-                self.gamepad_process = subprocess.Popen(["faugus-gamepad"])
             self.big_interface()
         if not self.interface_mode:
             self.interface_mode = "List"
@@ -274,23 +281,7 @@ class Main(Gtk.Window):
 
         self.game_running2 = False
 
-        self.connect("focus-in-event", self.on_focus_in)
-        self.connect("focus-out-event", self.on_focus_out)
-
         GLib.timeout_add_seconds(1, self.check_running_processes)
-
-    def apply_translation(self, language_code):
-        try:
-            translation = gettext.translation(
-                'faugus-launcher',
-                localedir=LOCALE_DIR,
-                languages=[language_code]
-            )
-            translation.install()
-            globals()['_'] = translation.gettext
-        except FileNotFoundError:
-            gettext.install('faugus-launcher', localedir=LOCALE_DIR)
-            globals()['_'] = gettext.gettext
 
     def check_running_processes(self):
         processos = self.load_processes_from_file()
@@ -343,15 +334,6 @@ class Main(Gtk.Window):
                 return {}
         return {}
 
-    def on_focus_in(self, widget, event):
-        if self.gamepad_navigation and not self.gamepad_process:
-            self.gamepad_process = subprocess.Popen(["faugus-gamepad"])
-
-    def on_focus_out(self, widget, event):
-        if self.gamepad_process:
-            self.gamepad_process.terminate()
-            self.gamepad_process = None
-
     def check_theme(self):
         settings = Gtk.Settings.get_default()
         prefer_dark = settings.get_property('gtk-application-prefer-dark-theme')
@@ -378,17 +360,10 @@ class Main(Gtk.Window):
         self.button_add.connect("clicked", self.on_button_add_clicked)
         self.button_add.set_can_focus(False)
         self.button_add.set_size_request(50, 50)
+        self.button_add.set_image(Gtk.Image.new_from_icon_name("faugus-add-symbolic", Gtk.IconSize.BUTTON))
         self.button_add.set_margin_top(10)
         self.button_add.set_margin_start(10)
         self.button_add.set_margin_bottom(10)
-
-        label_add = Gtk.Label(label="New")
-        label_add.set_margin_start(0)
-        label_add.set_margin_end(0)
-        label_add.set_margin_top(0)
-        label_add.set_margin_bottom(0)
-
-        self.button_add.add(label_add)
 
         # Create button for killing processes
         button_kill = Gtk.Button()
@@ -396,24 +371,17 @@ class Main(Gtk.Window):
         button_kill.set_can_focus(False)
         button_kill.set_tooltip_text(_("Force close all running games"))
         button_kill.set_size_request(50, 50)
+        button_kill.set_image(Gtk.Image.new_from_icon_name("faugus-kill-symbolic", Gtk.IconSize.BUTTON))
         button_kill.set_margin_top(10)
         button_kill.set_margin_end(10)
         button_kill.set_margin_bottom(10)
-
-        label_kill = Gtk.Label(label="Kill")
-        label_kill.set_margin_start(0)
-        label_kill.set_margin_end(0)
-        label_kill.set_margin_top(0)
-        label_kill.set_margin_bottom(0)
-
-        button_kill.add(label_kill)
 
         # Create button for settings
         button_settings = Gtk.Button()
         button_settings.connect("clicked", self.on_button_settings_clicked)
         button_settings.set_can_focus(False)
         button_settings.set_size_request(50, 50)
-        button_settings.set_image(Gtk.Image.new_from_icon_name("open-menu-symbolic", Gtk.IconSize.BUTTON))
+        button_settings.set_image(Gtk.Image.new_from_icon_name("faugus-settings-symbolic", Gtk.IconSize.BUTTON))
         button_settings.set_margin_top(10)
         button_settings.set_margin_start(10)
         button_settings.set_margin_bottom(10)
@@ -423,7 +391,7 @@ class Main(Gtk.Window):
         self.button_play.connect("clicked", self.on_button_play_clicked)
         self.button_play.set_can_focus(False)
         self.button_play.set_size_request(50, 50)
-        self.button_play.set_image(Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON))
+        self.button_play.set_image(Gtk.Image.new_from_icon_name("faugus-play-symbolic", Gtk.IconSize.BUTTON))
         self.button_play.set_margin_top(10)
         self.button_play.set_margin_end(10)
         self.button_play.set_margin_bottom(10)
@@ -498,17 +466,10 @@ class Main(Gtk.Window):
         self.button_add.connect("clicked", self.on_button_add_clicked)
         self.button_add.set_can_focus(False)
         self.button_add.set_size_request(50, 50)
+        self.button_add.set_image(Gtk.Image.new_from_icon_name("faugus-add-symbolic", Gtk.IconSize.BUTTON))
         self.button_add.set_margin_top(10)
         self.button_add.set_margin_start(10)
         self.button_add.set_margin_bottom(10)
-
-        label_add = Gtk.Label(label="New")
-        label_add.set_margin_start(0)
-        label_add.set_margin_end(0)
-        label_add.set_margin_top(0)
-        label_add.set_margin_bottom(0)
-
-        self.button_add.add(label_add)
 
         # Create button for killing processes
         button_kill = Gtk.Button()
@@ -516,41 +477,27 @@ class Main(Gtk.Window):
         button_kill.set_can_focus(False)
         button_kill.set_tooltip_text(_("Force close all running games"))
         button_kill.set_size_request(50, 50)
+        button_kill.set_image(Gtk.Image.new_from_icon_name("faugus-kill-symbolic", Gtk.IconSize.BUTTON))
         button_kill.set_margin_top(10)
         button_kill.set_margin_bottom(10)
-
-        label_kill = Gtk.Label(label="Kill")
-        label_kill.set_margin_start(0)
-        label_kill.set_margin_end(0)
-        label_kill.set_margin_top(0)
-        label_kill.set_margin_bottom(0)
-
-        button_kill.add(label_kill)
 
         # Create button for exiting
         button_bye = Gtk.Button()
         button_bye.connect("clicked", self.on_button_bye_clicked)
         button_bye.set_can_focus(False)
         button_bye.set_size_request(50, 50)
+        button_bye.set_image(Gtk.Image.new_from_icon_name("faugus-exit-symbolic", Gtk.IconSize.BUTTON))
         button_bye.set_margin_start(10)
         button_bye.set_margin_top(10)
         button_bye.set_margin_bottom(10)
         button_bye.set_margin_end(10)
-
-        label_bye = Gtk.Label(label="Bye")
-        label_bye.set_margin_start(0)
-        label_bye.set_margin_end(0)
-        label_bye.set_margin_top(0)
-        label_bye.set_margin_bottom(0)
-
-        button_bye.add(label_bye)
 
         # Create button for settings
         button_settings = Gtk.Button()
         button_settings.connect("clicked", self.on_button_settings_clicked)
         button_settings.set_can_focus(False)
         button_settings.set_size_request(50, 50)
-        button_settings.set_image(Gtk.Image.new_from_icon_name("open-menu-symbolic", Gtk.IconSize.BUTTON))
+        button_settings.set_image(Gtk.Image.new_from_icon_name("faugus-settings-symbolic", Gtk.IconSize.BUTTON))
         button_settings.set_margin_top(10)
         button_settings.set_margin_start(10)
         button_settings.set_margin_bottom(10)
@@ -560,7 +507,7 @@ class Main(Gtk.Window):
         self.button_play.connect("clicked", self.on_button_play_clicked)
         self.button_play.set_can_focus(False)
         self.button_play.set_size_request(50, 50)
-        self.button_play.set_image(Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON))
+        self.button_play.set_image(Gtk.Image.new_from_icon_name("faugus-play-symbolic", Gtk.IconSize.BUTTON))
         self.button_play.set_margin_top(10)
         self.button_play.set_margin_start(10)
         self.button_play.set_margin_end(10)
@@ -643,7 +590,7 @@ class Main(Gtk.Window):
 
         self.connect("key-press-event", self.on_key_press_event)
         self.show_all()
-        if self.start_fullscreen or faugus_session:
+        if self.start_fullscreen:
             self.fullscreen_activated = True
             self.grid_corner.set_visible(True)
             self.grid_left.set_margin_start(70)
@@ -653,9 +600,6 @@ class Main(Gtk.Window):
             self.grid_left.set_margin_start(0)
 
     def on_destroy(self, *args):
-        if self.gamepad_process:
-            self.gamepad_process.terminate()
-            self.gamepad_process.wait()
         if lock.is_locked:
             lock.release()
         Gtk.main_quit()
@@ -665,18 +609,14 @@ class Main(Gtk.Window):
 
         shutdown_item = Gtk.MenuItem(label=_("Shut down"))
         reboot_item = Gtk.MenuItem(label=_("Reboot"))
-        logout_item = Gtk.MenuItem(label=_("Log out"))
         close_item = Gtk.MenuItem(label=_("Close"))
 
         shutdown_item.connect("activate", self.on_shutdown)
         reboot_item.connect("activate", self.on_reboot)
-        logout_item.connect("activate", self.on_logout)
         close_item.connect("activate", self.on_close)
 
         menu.append(shutdown_item)
         menu.append(reboot_item)
-        if not faugus_session:
-            menu.append(logout_item)
         menu.append(close_item)
 
         menu.show_all()
@@ -687,9 +627,6 @@ class Main(Gtk.Window):
 
     def on_reboot(self, widget):
         subprocess.run(["pkexec", "reboot"])
-
-    def on_logout(self, widget):
-        subprocess.run(["loginctl", "terminate-user", os.getlogin()])
 
     def on_close(self, widget):
         if lock.is_locked:
@@ -770,8 +707,6 @@ class Main(Gtk.Window):
         dialog = Gtk.Dialog(title=_("{} Logs").format(self.current_title), parent=self, modal=True)
         dialog.set_icon_from_file(faugus_png)
         dialog.set_default_size(1280, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         scrolled_window1 = Gtk.ScrolledWindow()
         scrolled_window1.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -993,7 +928,7 @@ class Main(Gtk.Window):
                 selected_child.grab_focus()
 
         if self.interface_mode != "List":
-            if event.keyval == Gdk.KEY_Return and event.state & Gdk.ModifierType.MOD1_MASK and not faugus_session:
+            if event.keyval == Gdk.KEY_Return and event.state & Gdk.ModifierType.MOD1_MASK:
                 if self.get_window().get_state() & Gdk.WindowState.FULLSCREEN:
                     self.fullscreen_activated = False
                     self.unfullscreen()
@@ -1038,8 +973,6 @@ class Main(Gtk.Window):
         dialog.set_resizable(False)
         dialog.set_icon_from_file(faugus_png)
         subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-        if faugus_session:
-            dialog.fullscreen()
 
         label = Gtk.Label()
         label.set_label(_("{title} is already running.").format(title=title))
@@ -1095,16 +1028,13 @@ class Main(Gtk.Window):
             self.start_maximized = config_dict.get('start-maximized', 'False') == 'True'
             self.interface_mode = config_dict.get('interface-mode', '').strip('"')
             self.start_fullscreen = config_dict.get('start-fullscreen', 'False') == 'True'
-            self.gamepad_navigation = config_dict.get('gamepad-navigation', 'False') == 'True'
-            self.run_in_prefix = config_dict.get('run-in-prefix', 'False') == 'True'
             self.enable_logging = config_dict.get('enable-logging', 'False') == 'True'
             self.wayland_driver = config_dict.get('wayland-driver', 'False') == 'True'
             self.enable_hdr = config_dict.get('enable-hdr', 'False') == 'True'
             self.language = config_dict.get('language', '')
-            if faugus_session:
-                self.interface_mode = "Banners"
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False", lang)
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False",
+                             "List", "False", "False", "False", "False", "False", lang)
 
     def create_tray_menu(self):
         # Create the tray menu
@@ -1169,7 +1099,7 @@ class Main(Gtk.Window):
         # Restore the window when clicking the tray icon
         self.show_all()
         if self.interface_mode != "List":
-            if self.fullscreen_activated or faugus_session:
+            if self.fullscreen_activated:
                 self.fullscreen_activated = True
                 self.grid_corner.set_visible(True)
                 self.grid_left.set_margin_start(70)
@@ -1222,12 +1152,11 @@ class Main(Gtk.Window):
 
     def add_item_list(self, game):
         # Add a game item to the list
-
         if self.interface_mode == "List":
             hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         if self.interface_mode == "Blocks":
             hbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            hbox.set_size_request(300, 200)
+            hbox.set_size_request(200, -1)
         if self.interface_mode == "Banners":
             hbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
@@ -1273,15 +1202,20 @@ class Main(Gtk.Window):
             self.flowbox_child.set_valign(Gtk.Align.START)
             self.flowbox_child.set_halign(Gtk.Align.FILL)
         if self.interface_mode == "Blocks":
+            self.flowbox_child.set_hexpand(True)
+            self.flowbox_child.set_vexpand(True)
             scaled_pixbuf = pixbuf.scale_simple(100, 100, GdkPixbuf.InterpType.BILINEAR)
             image = Gtk.Image.new_from_file(game_icon)
             image.set_from_pixbuf(scaled_pixbuf)
-            hbox.pack_start(image, True, True, 0)
-            hbox.pack_start(game_label, True, True, 0)
-            game_label.set_margin_end(20)
-            game_label.set_margin_start(20)
-            self.flowbox_child.set_valign(Gtk.Align.START)
-            self.flowbox_child.set_halign(Gtk.Align.START)
+            hbox.pack_start(image, False, False, 0)
+            hbox.pack_start(game_label, True, False, 0)
+            image.set_margin_top(10)
+            game_label.set_margin_top(10)
+            game_label.set_margin_end(10)
+            game_label.set_margin_start(10)
+            game_label.set_margin_bottom(10)
+            self.flowbox_child.set_valign(Gtk.Align.FILL)
+            self.flowbox_child.set_halign(Gtk.Align.FILL)
         if self.interface_mode == "Banners":
             image2 = Gtk.Image()
             game_label.set_size_request(-1, 50)
@@ -1339,13 +1273,12 @@ class Main(Gtk.Window):
             if title in processos:
                 self.menu_item_play.set_sensitive(True)
                 self.button_play.set_sensitive(True)
-                self.button_play.set_image(
-                    Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON))
+                self.button_play.set_image(Gtk.Image.new_from_icon_name("faugus-stop-symbolic", Gtk.IconSize.BUTTON))
             else:
                 self.menu_item_play.set_sensitive(True)
                 self.button_play.set_sensitive(True)
                 self.button_play.set_image(
-                    Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON))
+                    Gtk.Image.new_from_icon_name("faugus-play-symbolic", Gtk.IconSize.BUTTON))
         else:
             self.menu_item_edit.set_sensitive(False)
             self.menu_item_delete.set_sensitive(False)
@@ -1381,8 +1314,6 @@ class Main(Gtk.Window):
         self.entry_default_prefix = settings_dialog.entry_default_prefix
         self.combo_box_interface = settings_dialog.combo_box_interface
         self.checkbox_start_fullscreen = settings_dialog.checkbox_start_fullscreen
-        self.checkbox_gamepad_navigation = settings_dialog.checkbox_gamepad_navigation
-        self.checkbox_run_in_prefix = settings_dialog.checkbox_run_in_prefix
         self.checkbox_enable_logging = settings_dialog.checkbox_enable_logging
         self.checkbox_wayland_driver = settings_dialog.checkbox_wayland_driver
         self.checkbox_enable_hdr = settings_dialog.checkbox_enable_hdr
@@ -1402,8 +1333,6 @@ class Main(Gtk.Window):
         default_prefix = self.entry_default_prefix.get_text()
         combo_box_interface = self.combo_box_interface.get_active_text()
         checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
-        checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
-        checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
         checkbox_enable_logging = self.checkbox_enable_logging.get_active()
         checkbox_wayland_driver = self.checkbox_wayland_driver.get_active()
         checkbox_enable_hdr = self.checkbox_enable_hdr.get_active()
@@ -1426,13 +1355,10 @@ class Main(Gtk.Window):
             if not validation_result:
                 return
 
-            if faugus_session:
-                self.save_session_config(settings_dialog)
-
             self.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state,
                              default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray,
                              checkbox_start_boot, combo_box_interface, checkbox_start_maximized,
-                             checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix,checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
+                             checkbox_start_fullscreen, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
             self.manage_autostart_file(checkbox_start_boot)
 
             if checkbox_system_tray:
@@ -1447,47 +1373,21 @@ class Main(Gtk.Window):
                     self.disconnect_by_func(self.on_window_delete_event)
                     self.window_delete_event_connected = False
 
-            if checkbox_gamepad_navigation:
-                self.gamepad_process = subprocess.Popen(["faugus-gamepad"])
-            else:
-                if self.gamepad_process:
-                    self.gamepad_process.terminate()
-                    self.gamepad_process.wait()
-
-            if not faugus_session:
-                if validation_result:
-                    if self.interface_mode != combo_box_interface:
-                        subprocess.Popen([sys.executable, __file__])
-                        self.destroy()
-                    if faugus_backup:
-                        subprocess.Popen([sys.executable, __file__])
-                        self.destroy()
-                    if self.language != language:
-                        subprocess.Popen([sys.executable, __file__])
-                        self.destroy()
+            if validation_result:
+                if self.interface_mode != combo_box_interface:
+                    subprocess.Popen([sys.executable, __file__])
+                    self.destroy()
+                if faugus_backup:
+                    subprocess.Popen([sys.executable, __file__])
+                    self.destroy()
+                if self.language != language:
+                    subprocess.Popen([sys.executable, __file__])
+                    self.destroy()
             self.load_config()
             settings_dialog.destroy()
 
         else:
             settings_dialog.destroy()
-
-    def save_session_config(self, settings_dialog):
-
-        config_path = os.path.join(faugus_launcher_dir, "session.ini")
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-        config = {'SCREEN_WIDTH': settings_dialog.entry_screen_resolution_w.get_text(),
-            'SCREEN_HEIGHT': settings_dialog.entry_screen_resolution_h.get_text(),
-            'INTERNAL_WIDTH': settings_dialog.entry_game_resolution_w.get_text(),
-            'INTERNAL_HEIGHT': settings_dialog.entry_game_resolution_h.get_text(),
-            'REFRESH_RATE': settings_dialog.entry_refresh_rate.get_text(),
-            'PREFER_OUTPUT': settings_dialog.entry_prefer_output.get_text(),
-            'ADAPTIVE_SYNC': "1" if settings_dialog.checkbox_adaptive_sync.get_active() else "0",
-            'HDR_SUPPORT': "1" if settings_dialog.checkbox_hdr.get_active() else "0"}
-
-        with open(config_path, "w") as file:
-            for key, value in config.items():
-                file.write(f"{key}={value}\n")
 
     def validate_settings_fields(self, settings_dialog, default_prefix):
         settings_dialog.entry_default_prefix.get_style_context().remove_class("entry")
@@ -1590,7 +1490,7 @@ class Main(Gtk.Window):
                 command_parts.append(disable_hidraw)
             if runner != "Linux-Native":
                 if prefix:
-                    command_parts.append(f"WINEPREFIX='{prefix}'")
+                    command_parts.append(f'WINEPREFIX="{prefix}"')
             if protonfix:
                 command_parts.append(f'GAMEID={protonfix}')
             else:
@@ -1607,7 +1507,9 @@ class Main(Gtk.Window):
 
             # Add the fixed command and remaining arguments
             command_parts.append(f'"{umu_run}"')
-            if path:
+            if addapp_checkbox == "addapp_enabled":
+                command_parts.append(f'"{addapp_bat}"')
+            elif path:
                 command_parts.append(f'"{path}"')
             if game_arguments:
                 command_parts.append(f'{game_arguments}')
@@ -1622,13 +1524,12 @@ class Main(Gtk.Window):
             # Save the game title to the latest_games.txt file
             self.update_latest_games_file(title)
 
-            if self.load_close_onlaunch() and not faugus_session:
+            if self.load_close_onlaunch():
                 self.processo = subprocess.Popen([sys.executable, faugus_run_path, command], cwd=game_directory)
 
                 self.menu_item_play.set_sensitive(False)
                 self.button_play.set_sensitive(False)
-                self.button_play.set_image(
-                    Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON))
+                self.button_play.set_image(Gtk.Image.new_from_icon_name("faugus-stop-symbolic", Gtk.IconSize.BUTTON))
 
                 def check_pid_timeout():
                     if self.find_pid(game):
@@ -1638,16 +1539,11 @@ class Main(Gtk.Window):
                 GLib.timeout_add(1000, check_pid_timeout)
 
             else:
-                if faugus_session:
-                    self.processo = subprocess.Popen([sys.executable, faugus_run_path, command, "", "session"],
-                        cwd=game_directory)
-                else:
-                    self.processo = subprocess.Popen([sys.executable, faugus_run_path, command], cwd=game_directory)
+                self.processo = subprocess.Popen([sys.executable, faugus_run_path, command], cwd=game_directory)
 
                 self.menu_item_play.set_sensitive(False)
                 self.button_play.set_sensitive(False)
-                self.button_play.set_image(
-                    Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON))
+                self.button_play.set_image(Gtk.Image.new_from_icon_name("faugus-stop-symbolic", Gtk.IconSize.BUTTON))
 
                 def check_pid_periodically():
                     if self.find_pid(game):
@@ -1679,13 +1575,13 @@ class Main(Gtk.Window):
 
             self.menu_item_play.set_sensitive(True)
             self.button_play.set_sensitive(True)
-            self.button_play.set_image(Gtk.Image.new_from_icon_name("media-playback-stop-symbolic", Gtk.IconSize.BUTTON))
+            self.button_play.set_image(Gtk.Image.new_from_icon_name("faugus-stop-symbolic", Gtk.IconSize.BUTTON))
             self.play_button_locked = False
             return True
 
         self.menu_item_play.set_sensitive(True)
         self.button_play.set_sensitive(True)
-        self.button_play.set_image(Gtk.Image.new_from_icon_name("media-playback-start-symbolic", Gtk.IconSize.BUTTON))
+        self.button_play.set_image(Gtk.Image.new_from_icon_name("faugus-play-symbolic", Gtk.IconSize.BUTTON))
 
         return False
 
@@ -1900,15 +1796,15 @@ class Main(Gtk.Window):
                 processos = self.load_processes_from_file()
                 if title in processos:
                     data = processos[title]
-                    pids = [data.get("main")] + data.get("children", [])
-                    for pid in pids:
-                        try:
-                            os.kill(pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                    del processos[title]
-                    with open(running_games, "w") as f:
-                        json.dump(processos, f, indent=2)
+                    pid = data.get("main")
+                    if pid:
+                        parent = psutil.Process(pid)
+                        children = parent.children(recursive=True)
+
+                        for child in children:
+                            child.terminate()
+
+                        parent.terminate()
 
                 # Remove game and associated files if required
                 if confirmation_dialog.get_remove_prefix_state():
@@ -1980,8 +1876,6 @@ class Main(Gtk.Window):
         dialog.set_resizable(False)
         dialog.set_icon_from_file(faugus_png)
         subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-        if faugus_session:
-            dialog.fullscreen()
 
         label = Gtk.Label()
         label.set_label(title)
@@ -2283,7 +2177,7 @@ class Main(Gtk.Window):
             self.box_launcher.destroy()
             self.box_main.show_all()
             if self.interface_mode != "List":
-                if self.fullscreen_activated or faugus_session:
+                if self.fullscreen_activated:
                     self.fullscreen_activated = True
                     self.grid_corner.set_visible(True)
                     self.grid_left.set_margin_start(70)
@@ -2435,6 +2329,8 @@ class Main(Gtk.Window):
             title_formatted = title_formatted.replace(' ', '-')
             title_formatted = '-'.join(title_formatted.lower().split())
 
+            game.addapp_bat = f"{os.path.dirname(game.path)}/faugus-{title_formatted}.bat"
+
             if self.interface_mode == "Banners":
                 banner = os.path.join(banners_dir, f"{title_formatted}.png")
                 temp_banner_path = edit_game_dialog.banner_path_temp
@@ -2463,6 +2359,11 @@ class Main(Gtk.Window):
             # Call add_remove_shortcut method
             self.add_shortcut(game, shortcut_state, icon_temp, icon_final)
             self.add_steam_shortcut(game, steam_shortcut_state, icon_temp, icon_final)
+
+            if game.addapp_checkbox == True:
+                with open(game.addapp_bat, "w") as bat_file:
+                    bat_file.write(f'start "" "z:{game.addapp}"\n')
+                    bat_file.write(f'start "" "z:{game.path}"\n')
 
             # Save changes and update UI
             self.save_games()
@@ -2544,7 +2445,9 @@ class Main(Gtk.Window):
 
         # Add the fixed command and remaining arguments
         command_parts.append(f"'{umu_run}'")
-        if path:
+        if addapp == "addapp_enabled":
+            command_parts.append(f"'{addapp_bat}'")
+        elif path:
             command_parts.append(f"'{path}'")
         if game_arguments:
             command_parts.append(f"{game_arguments}")
@@ -2709,7 +2612,9 @@ class Main(Gtk.Window):
 
         # Add the fixed command and remaining arguments
         command_parts.append(f"'{umu_run}'")
-        if path:
+        if addapp == "addapp_enabled":
+            command_parts.append(f"'{addapp_bat}'")
+        elif path:
             command_parts.append(f"'{path}'")
         if game_arguments:
             command_parts.append(f"{game_arguments}")
@@ -2805,7 +2710,7 @@ class Main(Gtk.Window):
         self.entry_search.set_text("")
         self.show_all()
         if self.interface_mode != "List":
-            if self.fullscreen_activated or faugus_session:
+            if self.fullscreen_activated:
                 self.fullscreen_activated = True
                 self.grid_corner.set_visible(True)
                 self.grid_left.set_margin_start(70)
@@ -2828,7 +2733,10 @@ class Main(Gtk.Window):
         with open("games.json", "w", encoding="utf-8") as file:
             json.dump(games_data, file, ensure_ascii=False, indent=4)
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state,
+                    default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray,
+                    checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen,
+                    checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
         # Path to the configuration file
         config_file = os.path.join(self.working_directory, 'config.ini')
 
@@ -2858,8 +2766,6 @@ class Main(Gtk.Window):
         config['interface-mode'] = combo_box_interface
         config['start-maximized'] = checkbox_start_maximized
         config['start-fullscreen'] = checkbox_start_fullscreen
-        config['gamepad-navigation'] = checkbox_gamepad_navigation
-        config['run-in-prefix'] = checkbox_run_in_prefix
         config['enable-logging'] = checkbox_enable_logging
         config['wayland-driver'] = checkbox_wayland_driver
         config['enable-hdr'] = checkbox_enable_hdr
@@ -2882,9 +2788,6 @@ class Settings(Gtk.Dialog):
         self.set_icon_from_file(faugus_png)
         self.parent = parent
 
-        if faugus_session:
-            self.fullscreen()
-
         css_provider = Gtk.CssProvider()
         css = """
         .entry {
@@ -2904,25 +2807,102 @@ class Settings(Gtk.Dialog):
                                                  Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
         self.LANG_NAMES = {
+            "af": "Afrikaans",
+            "am": "Amharic",
             "ar": "Arabic",
+            "az": "Azerbaijani",
+            "be": "Belarusian",
+            "bg": "Bulgarian",
+            "bn": "Bengali",
+            "bs": "Bosnian",
+            "ca": "Catalan",
+            "cs": "Czech",
+            "cy": "Welsh",
+            "da": "Danish",
             "de": "German",
             "el": "Greek",
+            "en": "English",
+            "eo": "Esperanto",
             "es": "Spanish",
+            "et": "Estonian",
+            "eu": "Basque",
             "fa": "Persian",
             "fi": "Finnish",
+            "fil": "Filipino",
             "fr": "French",
+            "ga": "Irish",
+            "gl": "Galician",
+            "gu": "Gujarati",
+            "he": "Hebrew",
+            "hi": "Hindi",
             "hr": "Croatian",
+            "ht": "Haitian Creole",
+            "hu": "Hungarian",
+            "hy": "Armenian",
+            "id": "Indonesian",
+            "is": "Icelandic",
             "it": "Italian",
+            "ja": "Japanese",
+            "jv": "Javanese",
             "ka": "Georgian",
+            "kk": "Kazakh",
+            "km": "Khmer",
+            "kn": "Kannada",
             "ko": "Korean",
+            "ku": "Kurdish (Kurmanji)",
+            "ky": "Kyrgyz",
+            "lo": "Lao",
+            "lt": "Lithuanian",
+            "lv": "Latvian",
+            "mg": "Malagasy",
+            "mi": "Maori",
+            "mk": "Macedonian",
+            "ml": "Malayalam",
+            "mn": "Mongolian",
+            "mr": "Marathi",
+            "ms": "Malay",
+            "mt": "Maltese",
+            "my": "Burmese",
             "nb": "Norwegian (Bokmål)",
+            "ne": "Nepali",
             "nl": "Dutch",
+            "nn": "Norwegian (Nynorsk)",
+            "pa": "Punjabi",
             "pl": "Polish",
+            "ps": "Pashto",
+            "pt": "Portuguese (Portugal)",
             "pt_BR": "Portuguese (Brazil)",
+            "ro": "Romanian",
             "ru": "Russian",
+            "sd": "Sindhi",
+            "si": "Sinhala",
+            "sk": "Slovak",
+            "sl": "Slovenian",
+            "so": "Somali",
+            "sq": "Albanian",
+            "sr": "Serbian",
+            "sv": "Swedish",
+            "sw": "Swahili",
+            "ta": "Tamil",
+            "te": "Telugu",
+            "tg": "Tajik",
+            "th": "Thai",
+            "tk": "Turkmen",
+            "tl": "Tagalog",
             "tr": "Turkish",
+            "tt": "Tatar",
+            "ug": "Uyghur",
+            "uk": "Ukrainian",
+            "ur": "Urdu",
+            "uz": "Uzbek",
+            "vi": "Vietnamese",
+            "xh": "Xhosa",
+            "yi": "Yiddish",
             "zh_CN": "Chinese (Simplified)",
+            "zh_TW": "Chinese (Traditional)",
+            "zu": "Zulu",
         }
+
         self.lang_codes = {}
 
         # Widgets for Interface mode
@@ -2949,10 +2929,6 @@ class Settings(Gtk.Dialog):
         self.checkbox_start_fullscreen.set_active(False)
         self.checkbox_start_fullscreen.connect("toggled", self.on_checkbox_toggled, "fullscreen")
         self.checkbox_start_fullscreen.set_tooltip_text(_("Alt+Enter toggles fullscreen"))
-
-        # Create checkbox for 'Gamepad navigation' option
-        self.checkbox_gamepad_navigation = Gtk.CheckButton(label=_("Gamepad navigation (experimental)"))
-        self.checkbox_gamepad_navigation.set_active(False)
 
         # Widgets for prefix
         self.label_default_prefix = Gtk.Label(label=_("Default Prefixes Location"))
@@ -3010,10 +2986,6 @@ class Settings(Gtk.Dialog):
         # Create checkbox for 'Splash screen' option
         self.checkbox_splash_disable = Gtk.CheckButton(label=_("Disable splash window"))
         self.checkbox_splash_disable.set_active(False)
-
-        # Create checkbox for 'Run multiple games in the same prefix' option
-        self.checkbox_run_in_prefix = Gtk.CheckButton(label=_("Run multiple games in the same prefix"))
-        self.checkbox_run_in_prefix.set_active(False)
 
         # Create checkbox for 'Enable logging' option
         self.checkbox_enable_logging = Gtk.CheckButton(label=_("Enable logging"))
@@ -3187,221 +3159,91 @@ class Settings(Gtk.Dialog):
         self.grid_big_interface.set_margin_end(10)
         self.grid_big_interface.set_margin_bottom(10)
 
-        if faugus_session:
-            grid_gamescope_settings = Gtk.Grid()
-            grid_gamescope_settings.set_row_spacing(10)
-            grid_gamescope_settings.set_column_spacing(10)
-            grid_gamescope_settings.set_margin_start(10)
-            grid_gamescope_settings.set_margin_end(10)
-            grid_gamescope_settings.set_margin_top(10)
-            grid_gamescope_settings.set_margin_bottom(10)
+        grid_language.attach(self.label_language, 0, 0, 1, 1)
+        grid_language.attach(self.combo_box_language, 0, 1, 1, 1)
+        self.combo_box_language.set_hexpand(True)
 
-            label_gamescope_settings = Gtk.Label(label=_("Gamescope Settings"))
-            label_gamescope_settings.set_halign(Gtk.Align.START)
+        grid_prefix.attach(self.label_default_prefix, 0, 0, 1, 1)
+        grid_prefix.attach(self.entry_default_prefix, 0, 1, 3, 1)
+        self.entry_default_prefix.set_hexpand(True)
+        grid_prefix.attach(self.button_search_prefix, 3, 1, 1, 1)
 
-            label_gamescope_restart = Gtk.Label(label=_("* Restart to apply Gamescope Settings."))
-            label_gamescope_restart.set_halign(Gtk.Align.START)
-            label_gamescope_restart.set_margin_top(10)
+        grid_runner.attach(self.label_runner, 0, 6, 1, 1)
+        grid_runner.attach(self.combo_box_runner, 0, 7, 1, 1)
+        grid_runner.attach(self.button_proton_manager, 0, 8, 1, 1)
+        self.combo_box_runner.set_hexpand(True)
+        self.button_proton_manager.set_hexpand(True)
 
-            label_screen_resolution = Gtk.Label(label=_("Screen Resolution"))
-            label_screen_resolution.set_halign(Gtk.Align.START)
-            box_screen_resolution = Gtk.Box()
-            self.entry_screen_resolution_w = Gtk.Entry()
-            self.entry_screen_resolution_w.set_width_chars(5)
-            self.entry_screen_resolution_h = Gtk.Entry()
-            self.entry_screen_resolution_h.set_width_chars(5)
-            label_screen_resolution_x = Gtk.Label(label="X")
-            label_screen_resolution_x.set_margin_start(5)
-            label_screen_resolution_x.set_margin_end(5)
-            box_screen_resolution.add(self.entry_screen_resolution_w)
-            box_screen_resolution.add(label_screen_resolution_x)
-            box_screen_resolution.add(self.entry_screen_resolution_h)
+        grid_tools.attach(self.checkbox_mangohud, 0, 0, 1, 1)
+        self.checkbox_mangohud.set_hexpand(True)
+        grid_tools.attach(self.checkbox_gamemode, 0, 1, 1, 1)
+        grid_tools.attach(self.checkbox_disable_hidraw, 0, 2, 1, 1)
+        grid_tools.attach(self.button_winetricks_default, 1, 0, 1, 1)
+        grid_tools.attach(self.button_winecfg_default, 1, 1, 1, 1)
+        grid_tools.attach(self.button_run_default, 1, 2, 1, 1)
 
-            label_game_resolution = Gtk.Label(label=_("Game Resolution"))
-            label_game_resolution.set_halign(Gtk.Align.START)
-            box_game_resolution = Gtk.Box()
-            self.entry_game_resolution_w = Gtk.Entry()
-            self.entry_game_resolution_w.set_width_chars(5)
-            self.entry_game_resolution_h = Gtk.Entry()
-            self.entry_game_resolution_h.set_width_chars(5)
-            label_game_resolution_x = Gtk.Label(label="X")
-            label_game_resolution_x.set_margin_start(5)
-            label_game_resolution_x.set_margin_end(5)
-            box_game_resolution.add(self.entry_game_resolution_w)
-            box_game_resolution.add(label_game_resolution_x)
-            box_game_resolution.add(self.entry_game_resolution_h)
+        grid_miscellaneous.attach(self.checkbox_discrete_gpu, 0, 2, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_splash_disable, 0, 3, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_system_tray, 0, 4, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_start_boot, 0, 5, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_close_after_launch, 0, 6, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_enable_logging, 0, 7, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_wayland_driver, 0, 8, 1, 1)
+        grid_miscellaneous.attach(self.checkbox_enable_hdr, 0, 9, 1, 1)
 
-            label_refresh_rate = Gtk.Label(label=_("Refresh Rate"))
-            label_refresh_rate.set_halign(Gtk.Align.START)
-            self.entry_refresh_rate = Gtk.Entry()
-            self.entry_refresh_rate.set_width_chars(5)
+        grid_interface_mode.attach(self.label_interface, 0, 0, 1, 1)
+        grid_interface_mode.attach(self.combo_box_interface, 0, 1, 1, 1)
+        self.combo_box_interface.set_hexpand(True)
 
-            label_prefer_output = Gtk.Label(label=_("Prefer Output"))
-            label_prefer_output.set_halign(Gtk.Align.START)
-            self.entry_prefer_output = Gtk.Entry()
-            self.entry_prefer_output.set_width_chars(5)
+        grid_backup.attach(button_backup, 0, 1, 1, 1)
+        grid_backup.attach(button_restore, 1, 1, 1, 1)
 
-            self.checkbox_adaptive_sync = Gtk.CheckButton(label=_("Adaptive Sync"))
-            self.checkbox_adaptive_sync.set_halign(Gtk.Align.START)
+        self.grid_big_interface.attach(self.checkbox_start_maximized, 0, 0, 1, 1)
+        self.grid_big_interface.attach(self.checkbox_start_fullscreen, 0, 1, 1, 1)
 
-            self.checkbox_hdr = Gtk.CheckButton(label="HDR")
-            self.checkbox_hdr.set_halign(Gtk.Align.START)
+        grid_support.attach(button_kofi, 0, 1, 1, 1)
+        grid_support.attach(button_paypal, 1, 1, 1, 1)
 
-            grid_gamescope_settings.attach(label_gamescope_settings, 0, 0, 2, 1)
-            grid_gamescope_settings.attach(label_screen_resolution, 0, 1, 1, 1)
-            grid_gamescope_settings.attach(box_screen_resolution, 1, 1, 1, 1)
-            grid_gamescope_settings.attach(label_game_resolution, 0, 2, 1, 1)
-            grid_gamescope_settings.attach(box_game_resolution, 1, 2, 1, 1)
-            grid_gamescope_settings.attach(label_refresh_rate, 0, 3, 1, 1)
-            grid_gamescope_settings.attach(self.entry_refresh_rate, 1, 3, 1, 1)
-            grid_gamescope_settings.attach(label_prefer_output, 0, 4, 1, 1)
-            grid_gamescope_settings.attach(self.entry_prefer_output, 1, 4, 1, 1)
-            grid_gamescope_settings.attach(self.checkbox_adaptive_sync, 0, 5, 1, 1)
-            grid_gamescope_settings.attach(self.checkbox_hdr, 1, 5, 1, 1)
-            grid_gamescope_settings.attach(label_gamescope_restart, 0, 6, 2, 1)
+        box_left.pack_start(grid_language, False, False, 0)
+        box_left.pack_start(grid_prefix, False, False, 0)
+        box_left.pack_start(grid_runner, False, False, 0)
+        box_left.pack_start(self.label_default_prefix_tools, False, False, 0)
+        box_left.pack_start(grid_tools, False, False, 0)
+        box_left.pack_end(grid_support, False, False, 0)
+        box_left.pack_end(self.label_support, False, False, 0)
 
-            grid_backup.attach(button_backup, 0, 1, 1, 1)
-            grid_backup.attach(button_restore, 1, 1, 1, 1)
+        box_right.pack_start(self.label_miscellaneous, False, False, 0)
+        box_right.pack_start(grid_miscellaneous, False, False, 0)
+        box_right.pack_start(grid_interface_mode, False, False, 0)
+        box_right.pack_start(self.grid_big_interface, False, False, 0)
+        box_right.pack_end(grid_backup, False, False, 0)
+        box_right.pack_end(self.label_settings, False, False, 0)
 
-            grid_prefix.attach(self.label_default_prefix, 0, 0, 1, 1)
-            grid_prefix.attach(self.entry_default_prefix, 0, 1, 3, 1)
-            self.entry_default_prefix.set_hexpand(True)
-            grid_prefix.attach(self.button_search_prefix, 3, 1, 1, 1)
+        box_main.attach(box_left, 0, 0, 1, 1)
+        box_main.attach(box_right, 1, 0, 1, 1)
+        box_left.set_hexpand(True)
+        box_right.set_hexpand(True)
+        frame.add(box_main)
 
-            grid_runner.attach(self.label_runner, 0, 6, 1, 1)
-            grid_runner.attach(self.combo_box_runner, 0, 7, 1, 1)
-            grid_runner.attach(self.button_proton_manager, 0, 8, 1, 1)
-            self.combo_box_runner.set_hexpand(True)
-            self.button_proton_manager.set_hexpand(True)
+        box_bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box_bottom.set_margin_start(10)
+        box_bottom.set_margin_end(10)
+        box_bottom.set_margin_bottom(10)
+        self.button_cancel.set_hexpand(True)
+        self.button_ok.set_hexpand(True)
 
-            grid_miscellaneous.attach(self.checkbox_discrete_gpu, 0, 2, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_splash_disable, 0, 3, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_enable_logging, 0, 4, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_wayland_driver, 0, 5, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_gamepad_navigation, 0, 6, 1, 1)
+        box_bottom.pack_start(self.button_cancel, True, True, 0)
+        box_bottom.pack_start(self.button_ok, True, True, 0)
 
-            box_left.pack_start(grid_prefix, False, False, 0)
-            box_left.pack_start(grid_runner, False, False, 0)
-            box_left.pack_start(self.label_miscellaneous, False, False, 0)
-            box_left.pack_start(grid_miscellaneous, False, False, 0)
+        self.box.add(frame)
+        self.box.add(box_bottom)
 
-            box_right.pack_start(grid_gamescope_settings, False, False, 0)
-            box_right.pack_end(grid_backup, False, False, 0)
-            box_right.pack_end(self.label_settings, False, False, 0)
+        self.populate_combobox_with_runners()
+        self.populate_languages()
+        self.load_config()
 
-            box_main.attach(box_left, 0, 0, 1, 1)
-            box_main.attach(box_right, 1, 0, 1, 1)
-            box_left.set_hexpand(True)
-            box_right.set_hexpand(True)
-            frame.add(box_main)
-
-            box_bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            box_bottom.set_margin_start(10)
-            box_bottom.set_margin_end(10)
-            box_bottom.set_margin_bottom(10)
-            self.button_cancel.set_hexpand(True)
-            self.button_ok.set_hexpand(True)
-
-            box_bottom.pack_start(self.button_cancel, True, True, 0)
-            box_bottom.pack_start(self.button_ok, True, True, 0)
-
-            self.box.add(frame)
-            self.box.add(box_bottom)
-
-            self.populate_combobox_with_runners()
-            self.load_config()
-            self.load_session_config()
-
-            self.show_all()
-
-        else:
-            grid_language.attach(self.label_language, 0, 0, 1, 1)
-            grid_language.attach(self.combo_box_language, 0, 1, 1, 1)
-            self.combo_box_language.set_hexpand(True)
-
-            grid_prefix.attach(self.label_default_prefix, 0, 0, 1, 1)
-            grid_prefix.attach(self.entry_default_prefix, 0, 1, 3, 1)
-            self.entry_default_prefix.set_hexpand(True)
-            grid_prefix.attach(self.button_search_prefix, 3, 1, 1, 1)
-
-            grid_runner.attach(self.label_runner, 0, 6, 1, 1)
-            grid_runner.attach(self.combo_box_runner, 0, 7, 1, 1)
-            grid_runner.attach(self.button_proton_manager, 0, 8, 1, 1)
-            self.combo_box_runner.set_hexpand(True)
-            self.button_proton_manager.set_hexpand(True)
-
-            grid_tools.attach(self.checkbox_mangohud, 0, 0, 1, 1)
-            self.checkbox_mangohud.set_hexpand(True)
-            grid_tools.attach(self.checkbox_gamemode, 0, 1, 1, 1)
-            grid_tools.attach(self.checkbox_disable_hidraw, 0, 2, 1, 1)
-            grid_tools.attach(self.button_winetricks_default, 1, 0, 1, 1)
-            grid_tools.attach(self.button_winecfg_default, 1, 1, 1, 1)
-            grid_tools.attach(self.button_run_default, 1, 2, 1, 1)
-
-            grid_miscellaneous.attach(self.checkbox_discrete_gpu, 0, 2, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_splash_disable, 0, 3, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_system_tray, 0, 4, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_start_boot, 0, 5, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_close_after_launch, 0, 6, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_run_in_prefix, 0, 7, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_enable_logging, 0, 8, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_wayland_driver, 0, 9, 1, 1)
-            grid_miscellaneous.attach(self.checkbox_enable_hdr, 0, 10, 1, 1)
-
-            grid_interface_mode.attach(self.label_interface, 0, 0, 1, 1)
-            grid_interface_mode.attach(self.combo_box_interface, 0, 1, 1, 1)
-            self.combo_box_interface.set_hexpand(True)
-
-            grid_backup.attach(button_backup, 0, 1, 1, 1)
-            grid_backup.attach(button_restore, 1, 1, 1, 1)
-
-            self.grid_big_interface.attach(self.checkbox_start_maximized, 0, 0, 1, 1)
-            self.grid_big_interface.attach(self.checkbox_start_fullscreen, 0, 1, 1, 1)
-            self.grid_big_interface.attach(self.checkbox_gamepad_navigation, 0, 2, 1, 1)
-
-            grid_support.attach(button_kofi, 0, 1, 1, 1)
-            grid_support.attach(button_paypal, 1, 1, 1, 1)
-
-            box_left.pack_start(grid_language, False, False, 0)
-            box_left.pack_start(grid_prefix, False, False, 0)
-            box_left.pack_start(grid_runner, False, False, 0)
-            box_left.pack_start(self.label_default_prefix_tools, False, False, 0)
-            box_left.pack_start(grid_tools, False, False, 0)
-            box_left.pack_end(grid_support, False, False, 0)
-            box_left.pack_end(self.label_support, False, False, 0)
-
-            box_right.pack_start(self.label_miscellaneous, False, False, 0)
-            box_right.pack_start(grid_miscellaneous, False, False, 0)
-            box_right.pack_start(grid_interface_mode, False, False, 0)
-            box_right.pack_start(self.grid_big_interface, False, False, 0)
-            box_right.pack_end(grid_backup, False, False, 0)
-            box_right.pack_end(self.label_settings, False, False, 0)
-
-            box_main.attach(box_left, 0, 0, 1, 1)
-            box_main.attach(box_right, 1, 0, 1, 1)
-            box_left.set_hexpand(True)
-            box_right.set_hexpand(True)
-            frame.add(box_main)
-
-            box_bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            box_bottom.set_margin_start(10)
-            box_bottom.set_margin_end(10)
-            box_bottom.set_margin_bottom(10)
-            self.button_cancel.set_hexpand(True)
-            self.button_ok.set_hexpand(True)
-
-            box_bottom.pack_start(self.button_cancel, True, True, 0)
-            box_bottom.pack_start(self.button_ok, True, True, 0)
-
-            self.box.add(frame)
-            self.box.add(box_bottom)
-
-            self.populate_combobox_with_runners()
-            self.populate_languages()
-            self.load_config()
-
-            self.show_all()
-            self.on_combobox_interface_changed(self.combo_box_interface)
+        self.show_all()
+        self.on_combobox_interface_changed(self.combo_box_interface)
 
         # Check if optional features are available and enable/disable accordingly
         self.mangohud_enabled = os.path.exists(mangohud_dir)
@@ -3432,31 +3274,6 @@ class Settings(Gtk.Dialog):
                 self.lang_codes[lang_name] = lang
 
         self.combo_box_language.set_active(0)
-
-    def load_session_config(self):
-        config_path = os.path.join(faugus_launcher_dir, "session.ini")
-        if not os.path.exists(config_path):
-            return
-
-        config = {}
-        with open(config_path, "r") as file:
-            for line in file:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
-
-        self.entry_screen_resolution_w.set_text(config.get('SCREEN_WIDTH', ""))
-        self.entry_screen_resolution_h.set_text(config.get('SCREEN_HEIGHT', ""))
-
-        self.entry_game_resolution_w.set_text(config.get('INTERNAL_WIDTH', ""))
-        self.entry_game_resolution_h.set_text(config.get('INTERNAL_HEIGHT', ""))
-
-        self.entry_refresh_rate.set_text(config.get('REFRESH_RATE', ""))
-        self.entry_prefer_output.set_text(config.get('PREFER_OUTPUT', ""))
-
-        self.checkbox_adaptive_sync.set_active(config.get('ADAPTIVE_SYNC', "0") == "1")
-        self.checkbox_hdr.set_active(config.get('HDR_SUPPORT', "0") == "1")
 
     def on_entry_query_tooltip(self, widget, x, y, keyboard_mode, tooltip):
         current_text = widget.get_text()
@@ -3512,9 +3329,7 @@ class Settings(Gtk.Dialog):
             checkbox_start_maximized = self.checkbox_start_maximized.get_active()
             combo_box_interface = self.combo_box_interface.get_active_text()
             checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
-            checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
             checkbox_enable_logging = self.checkbox_enable_logging.get_active()
-            checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
             checkbox_wayland_driver = self.checkbox_wayland_driver.get_active()
             checkbox_enable_hdr = self.checkbox_enable_hdr.get_active()
             combo_box_language = self.combo_box_language.get_active_text()
@@ -3533,16 +3348,14 @@ class Settings(Gtk.Dialog):
             self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state,
                                     default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable,
                                     checkbox_system_tray, checkbox_start_boot, combo_box_interface,
-                                    checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
+                                    checkbox_start_maximized, checkbox_start_fullscreen,
+                                    checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
             self.set_sensitive(False)
 
             proton_manager = faugus_proton_manager
 
             def run_command():
-                if faugus_session:
-                    process = subprocess.Popen([sys.executable, proton_manager, "session"])
-                else:
-                    process = subprocess.Popen([sys.executable, proton_manager])
+                process = subprocess.Popen([sys.executable, proton_manager])
                 process.wait()
                 GLib.idle_add(self.set_sensitive, True)
                 GLib.idle_add(self.parent.set_sensitive, True)
@@ -3620,8 +3433,6 @@ class Settings(Gtk.Dialog):
             checkbox_start_maximized = self.checkbox_start_maximized.get_active()
             combo_box_interface = self.combo_box_interface.get_active_text()
             checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
-            checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
-            checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
             checkbox_enable_logging = self.checkbox_enable_logging.get_active()
             checkbox_wayland_driver = self.checkbox_wayland_driver.get_active()
             checkbox_enable_hdr = self.checkbox_enable_hdr.get_active()
@@ -3641,7 +3452,7 @@ class Settings(Gtk.Dialog):
             self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state,
                                     default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable,
                                     checkbox_system_tray, checkbox_start_boot, combo_box_interface,
-                                    checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix,
+                                    checkbox_start_maximized, checkbox_start_fullscreen,
                                     checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
             self.set_sensitive(False)
 
@@ -3660,8 +3471,6 @@ class Settings(Gtk.Dialog):
 
             dialog = Gtk.Dialog(title=_("Select a file to run inside the prefix"), parent=self, flags=0)
             dialog.set_size_request(720, 720)
-            if faugus_session:
-                dialog.fullscreen()
 
             filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
             filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -3749,10 +3558,7 @@ class Settings(Gtk.Dialog):
                 faugus_run_path = faugus_run
 
                 def run_command():
-                    if faugus_session:
-                        process = subprocess.Popen([sys.executable, faugus_run_path, command, "", "session"])
-                    else:
-                        process = subprocess.Popen([sys.executable, faugus_run_path, command])
+                    process = subprocess.Popen([sys.executable, faugus_run_path, command])
                     process.wait()
                     GLib.idle_add(self.set_sensitive, True)
                     GLib.idle_add(self.parent.set_sensitive, True)
@@ -3784,9 +3590,7 @@ class Settings(Gtk.Dialog):
             checkbox_start_maximized = self.checkbox_start_maximized.get_active()
             combo_box_interface = self.combo_box_interface.get_active_text()
             checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
-            checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
             checkbox_enable_logging = self.checkbox_enable_logging.get_active()
-            checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
             checkbox_wayland_driver = self.checkbox_wayland_driver.get_active()
             checkbox_enable_hdr = self.checkbox_enable_hdr.get_active()
             combo_box_language = self.combo_box_language.get_active_text()
@@ -3805,7 +3609,8 @@ class Settings(Gtk.Dialog):
             self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state,
                                     default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable,
                                     checkbox_system_tray, checkbox_start_boot, combo_box_interface,
-                                    checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
+                                    checkbox_start_maximized, checkbox_start_fullscreen,
+                                    checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
             self.set_sensitive(False)
 
             self.parent.manage_autostart_file(checkbox_start_boot)
@@ -3842,10 +3647,7 @@ class Settings(Gtk.Dialog):
             faugus_run_path = faugus_run
 
             def run_command():
-                if faugus_session:
-                    process = subprocess.Popen([sys.executable, faugus_run_path, command, "", "session"])
-                else:
-                    process = subprocess.Popen([sys.executable, faugus_run_path, command])
+                process = subprocess.Popen([sys.executable, faugus_run_path, command])
                 process.wait()
                 GLib.idle_add(self.set_sensitive, True)
                 GLib.idle_add(self.parent.set_sensitive, True)
@@ -3872,8 +3674,6 @@ class Settings(Gtk.Dialog):
             checkbox_start_maximized = self.checkbox_start_maximized.get_active()
             combo_box_interface = self.combo_box_interface.get_active_text()
             checkbox_start_fullscreen = self.checkbox_start_fullscreen.get_active()
-            checkbox_gamepad_navigation = self.checkbox_gamepad_navigation.get_active()
-            checkbox_run_in_prefix = self.checkbox_run_in_prefix.get_active()
             checkbox_enable_logging = self.checkbox_enable_logging.get_active()
             checkbox_wayland_driver = self.checkbox_wayland_driver.get_active()
             checkbox_enable_hdr = self.checkbox_enable_hdr.get_active()
@@ -3893,7 +3693,8 @@ class Settings(Gtk.Dialog):
             self.parent.save_config(checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state,
                                     default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable,
                                     checkbox_system_tray, checkbox_start_boot, combo_box_interface,
-                                    checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
+                                    checkbox_start_maximized, checkbox_start_fullscreen,
+                                    checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language)
             self.set_sensitive(False)
 
             self.parent.manage_autostart_file(checkbox_start_boot)
@@ -3931,10 +3732,7 @@ class Settings(Gtk.Dialog):
             faugus_run_path = faugus_run
 
             def run_command():
-                if faugus_session:
-                    process = subprocess.Popen([sys.executable, faugus_run_path, command, "winetricks", "session"])
-                else:
-                    process = subprocess.Popen([sys.executable, faugus_run_path, command, "winetricks"])
+                process = subprocess.Popen([sys.executable, faugus_run_path, command, "winetricks"])
                 process.wait()
                 GLib.idle_add(self.set_sensitive, True)
                 GLib.idle_add(self.parent.set_sensitive, True)
@@ -3951,7 +3749,7 @@ class Settings(Gtk.Dialog):
     def on_button_backup_clicked(self, widget):
         self.show_warning_dialog(self, _("Prefixes and runners will not be backed up!"))
 
-        items = ["banners", "icons", "config.ini", "games.json", "latest-games.txt", "session.ini"]
+        items = ["banners", "icons", "config.ini", "games.json", "latest-games.txt"]
 
         temp_dir = os.path.join(faugus_launcher_dir, "temp-backup")
         os.makedirs(temp_dir, exist_ok=True)
@@ -3976,8 +3774,6 @@ class Settings(Gtk.Dialog):
 
         dialog = Gtk.Dialog(title=_("Save the backup file as..."), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.SAVE)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -4020,8 +3816,6 @@ class Settings(Gtk.Dialog):
     def on_button_restore_clicked(self, widget):
         dialog = Gtk.Dialog(title=_("Select a backup file to restore"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -4102,8 +3896,6 @@ class Settings(Gtk.Dialog):
         dialog.set_resizable(False)
         dialog.set_icon_from_file(faugus_png)
         subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-        if faugus_session:
-            dialog.fullscreen()
 
         label = Gtk.Label()
         label.set_label(title)
@@ -4146,8 +3938,6 @@ class Settings(Gtk.Dialog):
         dialog.set_resizable(False)
         dialog.set_icon_from_file(faugus_png)
         subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-        if faugus_session:
-            dialog.fullscreen()
 
         label = Gtk.Label()
         label.set_label(title)
@@ -4201,8 +3991,6 @@ class Settings(Gtk.Dialog):
     def on_button_search_prefix_clicked(self, widget):
         dialog = Gtk.Dialog(title=_("Select a prefix location"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.SELECT_FOLDER)
         filechooser.set_current_folder(os.path.expanduser(self.default_prefix))
@@ -4256,8 +4044,6 @@ class Settings(Gtk.Dialog):
             start_maximized = config_dict.get('start-maximized', 'False') == 'True'
             self.interface_mode = config_dict.get('interface-mode', '').strip('"')
             start_fullscreen = config_dict.get('start-fullscreen', 'False') == 'True'
-            gamepad_navigation = config_dict.get('gamepad-navigation', 'False') == 'True'
-            run_in_prefix = config_dict.get('run-in-prefix', 'False') == 'True'
             enable_logging = config_dict.get('enable-logging', 'False') == 'True'
             wayland_driver = config_dict.get('wayland-driver', 'False') == 'True'
             enable_hdr = config_dict.get('enable-hdr', 'False') == 'True'
@@ -4285,8 +4071,6 @@ class Settings(Gtk.Dialog):
             self.checkbox_start_boot.set_active(start_boot)
             self.checkbox_start_maximized.set_active(start_maximized)
             self.checkbox_start_fullscreen.set_active(start_fullscreen)
-            self.checkbox_gamepad_navigation.set_active(gamepad_navigation)
-            self.checkbox_run_in_prefix.set_active(run_in_prefix)
             self.checkbox_enable_logging.set_active(enable_logging)
             self.checkbox_wayland_driver.set_active(wayland_driver)
             self.checkbox_enable_hdr.set_active(enable_hdr)
@@ -4315,11 +4099,10 @@ class Settings(Gtk.Dialog):
 
                 self.combo_box_language.set_active(index_to_activate)
 
-            if faugus_session:
-                self.interface_mode = "Banners"
         else:
             # Save default configuration if file does not exist
-            self.parent.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False", lang)
+            self.parent.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False",
+                                    "False", "List", "False", "False", "False", "False", "False", lang)
 
 
 class Game:
@@ -4347,8 +4130,6 @@ class DuplicateDialog(Gtk.Dialog):
         super().__init__(title=_("Duplicate {title}").format(title=title), transient_for=parent, modal=True)
         self.set_resizable(False)
         self.set_icon_from_file(faugus_png)
-        if faugus_session:
-            self.fullscreen()
 
         label_title = Gtk.Label(label=_("Title"))
         label_title.set_halign(Gtk.Align.START)
@@ -4397,8 +4178,6 @@ class DuplicateDialog(Gtk.Dialog):
         dialog.set_resizable(False)
         dialog.set_icon_from_file(faugus_png)
         subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-        if faugus_session:
-            dialog.fullscreen()
 
         label = Gtk.Label()
         label.set_label(title)
@@ -4443,8 +4222,6 @@ class ConfirmationDialog(Gtk.Dialog):
         self.set_resizable(False)
         self.set_icon_from_file(faugus_png)
         subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-        if faugus_session:
-            self.fullscreen()
 
         label = Gtk.Label()
         label.set_label(_("Are you sure you want to delete {title}?").format(title=title))
@@ -4506,9 +4283,6 @@ class AddGame(Gtk.Dialog):
         self.set_icon_from_file(faugus_png)
         self.interface_mode = interface_mode
         self.updated_steam_id = None
-
-        if faugus_session:
-            self.fullscreen()
 
         self.icon_directory = f"{icons_dir}/icon_temp/"
 
@@ -4917,6 +4691,11 @@ class AddGame(Gtk.Dialog):
         self.grid_game_arguments.attach(self.entry_game_arguments, 0, 1, 4, 1)
         self.entry_game_arguments.set_hexpand(True)
 
+        self.grid_addapp.attach(self.checkbox_addapp, 0, 0, 1, 1)
+        self.grid_addapp.attach(self.entry_addapp, 0, 1, 3, 1)
+        self.entry_addapp.set_hexpand(True)
+        self.grid_addapp.attach(self.button_search_addapp, 3, 1, 1, 1)
+
         self.grid_tools.attach(self.checkbox_mangohud, 0, 0, 1, 1)
         self.checkbox_mangohud.set_hexpand(True)
         self.grid_tools.attach(self.checkbox_gamemode, 0, 1, 1, 1)
@@ -4930,6 +4709,7 @@ class AddGame(Gtk.Dialog):
         page2.add(self.grid_protonfix)
         page2.add(self.grid_launch_arguments)
         page2.add(self.grid_game_arguments)
+        page2.add(self.grid_addapp)
         page2.add(self.grid_tools)
 
         bottom_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -5049,8 +4829,6 @@ class AddGame(Gtk.Dialog):
 
         dialog = Gtk.Dialog(title=_("Select an image for the banner"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -5104,8 +4882,6 @@ class AddGame(Gtk.Dialog):
                     dialog_image.set_resizable(False)
                     dialog_image.set_icon_from_file(faugus_png)
                     subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-                    if faugus_session:
-                        dialog_image.fullscreen()
 
                     label = Gtk.Label()
                     label.set_label(_("The selected file is not a valid image."))
@@ -5203,8 +4979,6 @@ class AddGame(Gtk.Dialog):
     def on_button_search_addapp_clicked(self, widget):
         dialog = Gtk.Dialog(title=_("Select an additional application"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -5493,8 +5267,6 @@ class AddGame(Gtk.Dialog):
 
         dialog = Gtk.Dialog(title=_("Select a file to run inside the prefix"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -5578,7 +5350,7 @@ class AddGame(Gtk.Dialog):
             file_run = filechooser.get_filename()
             if not file_run.endswith(".reg"):
                 if prefix:
-                    command_parts.append(f"WINEPREFIX='{prefix}'")
+                    command_parts.append(f'WINEPREFIX="{prefix}"')
                 if title_formatted:
                     command_parts.append(f'GAMEID={title_formatted}')
                 if runner:
@@ -5586,7 +5358,7 @@ class AddGame(Gtk.Dialog):
                 command_parts.append(f'"{umu_run}" "{file_run}"')
             else:
                 if prefix:
-                    command_parts.append(f"WINEPREFIX='{prefix}'")
+                    command_parts.append(f'WINEPREFIX="{prefix}"')
                 if title_formatted:
                     command_parts.append(f'GAMEID={title_formatted}')
                 if runner:
@@ -5602,10 +5374,7 @@ class AddGame(Gtk.Dialog):
             faugus_run_path = faugus_run
 
             def run_command():
-                if faugus_session:
-                    process = subprocess.Popen([sys.executable, faugus_run_path, command, "", "session"])
-                else:
-                    process = subprocess.Popen([sys.executable, faugus_run_path, command])
+                process = subprocess.Popen([sys.executable, faugus_run_path, command])
                 process.wait()
                 GLib.idle_add(self.set_sensitive, True)
                 GLib.idle_add(self.parent_window.set_sensitive, True)
@@ -5687,8 +5456,6 @@ class AddGame(Gtk.Dialog):
 
         dialog = Gtk.Dialog(title=_("Select an icon for the shortcut"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -5743,8 +5510,6 @@ class AddGame(Gtk.Dialog):
                     dialog_image.set_resizable(False)
                     dialog_image.set_icon_from_file(faugus_png)
                     subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-                    if faugus_session:
-                        dialog_image.fullscreen()
 
                     label = Gtk.Label()
                     label.set_label(_("The selected file is not a valid image."))
@@ -5875,7 +5640,7 @@ class AddGame(Gtk.Dialog):
         title_formatted = title_formatted.replace(' ', '-')
         title_formatted = '-'.join(title_formatted.lower().split())
         self.default_prefix = self.load_default_prefix()
-        prefix = os.path.expanduser(self.default_prefix) + "/default"
+        prefix = os.path.expanduser(self.default_prefix) + "/" + title_formatted
         self.entry_prefix.set_text(prefix)
 
     def on_button_winecfg_clicked(self, widget):
@@ -5905,7 +5670,7 @@ class AddGame(Gtk.Dialog):
         # Add command parts if they are not empty
 
         if prefix:
-            command_parts.append(f"WINEPREFIX='{prefix}'")
+            command_parts.append(f'WINEPREFIX="{prefix}"')
         if title_formatted:
             command_parts.append(f'GAMEID={title_formatted}')
         if runner:
@@ -5924,10 +5689,7 @@ class AddGame(Gtk.Dialog):
         faugus_run_path = faugus_run
 
         def run_command():
-            if faugus_session:
-                process = subprocess.Popen([sys.executable, faugus_run_path, command, "", "session"])
-            else:
-                process = subprocess.Popen([sys.executable, faugus_run_path, command])
+            process = subprocess.Popen([sys.executable, faugus_run_path, command])
             process.wait()
             GLib.idle_add(self.set_sensitive, True)
             GLib.idle_add(self.parent_window.set_sensitive, True)
@@ -5963,7 +5725,7 @@ class AddGame(Gtk.Dialog):
         # Add command parts if they are not empty
 
         if prefix:
-            command_parts.append(f"WINEPREFIX='{prefix}'")
+            command_parts.append(f'WINEPREFIX="{prefix}"')
         command_parts.append(f'GAMEID=winetricks-gui')
         command_parts.append(f'STORE=none')
         if runner:
@@ -5982,10 +5744,7 @@ class AddGame(Gtk.Dialog):
         faugus_run_path = faugus_run
 
         def run_command():
-            if faugus_session:
-                process = subprocess.Popen([sys.executable, faugus_run_path, command, "winetricks", "session"])
-            else:
-                process = subprocess.Popen([sys.executable, faugus_run_path, command, "winetricks"])
+            process = subprocess.Popen([sys.executable, faugus_run_path, command, "winetricks"])
             process.wait()
             GLib.idle_add(self.set_sensitive, True)
             GLib.idle_add(self.parent_window.set_sensitive, True)
@@ -6002,8 +5761,6 @@ class AddGame(Gtk.Dialog):
     def on_button_search_clicked(self, widget):
         dialog = Gtk.Dialog(title=_("Select the game's .exe"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -6120,8 +5877,6 @@ class AddGame(Gtk.Dialog):
     def on_button_search_prefix_clicked(self, widget):
         dialog = Gtk.Dialog(title=_("Select a prefix location"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.SELECT_FOLDER)
         filechooser.set_current_folder(os.path.expanduser(self.default_prefix))
@@ -6264,6 +6019,15 @@ class CreateShortcut(Gtk.Window):
         self.entry_game_arguments = Gtk.Entry()
         self.entry_game_arguments.set_tooltip_text(_("e.g.: -d3d11 -fullscreen"))
 
+        self.label_addapp = Gtk.Label(label=_("Additional Application"))
+        self.label_addapp.set_halign(Gtk.Align.START)
+        self.entry_addapp = Gtk.Entry()
+        self.entry_addapp.set_tooltip_text(_("/path/to/the/app"))
+        self.button_search_addapp = Gtk.Button()
+        self.button_search_addapp.set_image(Gtk.Image.new_from_icon_name("system-search-symbolic", Gtk.IconSize.BUTTON))
+        self.button_search_addapp.connect("clicked", self.on_button_search_addapp_clicked)
+        self.button_search_addapp.set_size_request(50, -1)
+
         self.button_shortcut_icon = Gtk.Button()
         self.button_shortcut_icon.set_size_request(120, -1)
         self.button_shortcut_icon.set_tooltip_text(_("Select an icon for the shortcut"))
@@ -6362,6 +6126,11 @@ class CreateShortcut(Gtk.Window):
         self.grid_game_arguments.attach(self.entry_game_arguments, 0, 1, 4, 1)
         self.entry_game_arguments.set_hexpand(True)
 
+        self.grid_addapp.attach(self.label_addapp, 0, 0, 1, 1)
+        self.grid_addapp.attach(self.entry_addapp, 0, 1, 3, 1)
+        self.entry_addapp.set_hexpand(True)
+        self.grid_addapp.attach(self.button_search_addapp, 3, 1, 1, 1)
+
         self.grid_tools = Gtk.Grid(orientation=Gtk.Orientation.VERTICAL)
         self.grid_tools.set_row_spacing(10)
         self.grid_tools.set_column_spacing(10)
@@ -6406,6 +6175,7 @@ class CreateShortcut(Gtk.Window):
         self.main_grid.add(self.grid_protonfix)
         self.main_grid.add(self.grid_launch_arguments)
         self.main_grid.add(self.grid_game_arguments)
+        self.main_grid.add(self.grid_addapp)
         self.main_grid.add(self.box_tools)
 
         self.load_config()
@@ -6468,6 +6238,75 @@ class CreateShortcut(Gtk.Window):
         # Connect the destroy signal to Gtk.main_quit
         self.connect("destroy", Gtk.main_quit)
 
+    def on_button_search_addapp_clicked(self, widget):
+        dialog = Gtk.Dialog(title=_("Select an additional application"), parent=self, flags=0)
+        dialog.set_size_request(720, 720)
+
+        filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
+        filechooser.set_current_folder(os.path.expanduser("~/"))
+        filechooser.connect("file-activated", lambda widget: dialog.response(Gtk.ResponseType.OK))
+
+        windows_filter = Gtk.FileFilter()
+        windows_filter.set_name(_("Windows files"))
+        windows_filter.add_pattern("*.exe")
+        windows_filter.add_pattern("*.msi")
+        windows_filter.add_pattern("*.bat")
+        windows_filter.add_pattern("*.lnk")
+        windows_filter.add_pattern("*.reg")
+
+        all_files_filter = Gtk.FileFilter()
+        all_files_filter.set_name(_("All files"))
+        all_files_filter.add_pattern("*")
+
+        filter_combobox = Gtk.ComboBoxText()
+        filter_combobox.append("windows", _("Windows files"))
+        filter_combobox.append("all", _("All files"))
+        filter_combobox.set_active(0)
+        filter_combobox.set_size_request(150, -1)
+
+        def on_filter_changed(combobox):
+            active_id = combobox.get_active_id()
+            if active_id == "windows":
+                filechooser.set_filter(windows_filter)
+            elif active_id == "all":
+                filechooser.set_filter(all_files_filter)
+
+        filter_combobox.connect("changed", on_filter_changed)
+        filechooser.set_filter(windows_filter)
+
+        button_open = Gtk.Button.new_with_label(_("Open"))
+        button_open.connect("clicked", lambda w: dialog.response(Gtk.ResponseType.OK))
+        button_open.set_size_request(150, -1)
+
+        button_cancel = Gtk.Button.new_with_label(_("Cancel"))
+        button_cancel.connect("clicked", lambda w: dialog.response(Gtk.ResponseType.CANCEL))
+        button_cancel.set_size_request(150, -1)
+
+        button_grid = Gtk.Grid()
+        button_grid.set_row_spacing(10)
+        button_grid.set_column_spacing(10)
+        button_grid.set_margin_start(10)
+        button_grid.set_margin_end(10)
+        button_grid.set_margin_top(10)
+        button_grid.set_margin_bottom(10)
+        button_grid.attach(button_open, 1, 1, 1, 1)
+        button_grid.attach(button_cancel, 0, 1, 1, 1)
+        button_grid.attach(filter_combobox, 1, 0, 1, 1)
+
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        button_box.pack_end(button_grid, False, False, 0)
+
+        dialog.vbox.pack_start(filechooser, True, True, 0)
+        dialog.vbox.pack_start(button_box, False, False, 0)
+
+        dialog.show_all()
+        response = dialog.run()
+
+        if response == Gtk.ResponseType.OK:
+            self.entry_addapp.set_text(filechooser.get_filename())
+
+        dialog.destroy()
+
     def find_largest_resolution(self, directory):
         largest_image = None
         largest_resolution = (0, 0)  # (width, height)
@@ -6514,12 +6353,13 @@ class CreateShortcut(Gtk.Window):
 
         else:
             # Save default configuration if file does not exist
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False", lang)
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False",
+                             "List", "False", "False", "False", "False", "False", lang)
 
     def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state,
                     default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray,
                     checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen,
-                    checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
+                    checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
         # Path to the configuration file
         config_file = config_file_dir
 
@@ -6557,8 +6397,6 @@ class CreateShortcut(Gtk.Window):
         config['interface-mode'] = combo_box_interface
         config['start-maximized'] = checkbox_start_maximized
         config['start-fullscreen'] = checkbox_start_fullscreen
-        config['gamepad-navigation'] = checkbox_gamepad_navigation
-        config['run-in-prefix'] = checkbox_run_in_prefix
         config['enable-logging'] = checkbox_enable_logging
         config['wayland-driver'] = checkbox_wayland_driver
         config['enable-hdr'] = checkbox_enable_hdr
@@ -6594,6 +6432,12 @@ class CreateShortcut(Gtk.Window):
         title_formatted = '-'.join(title_formatted.lower().split())
 
         addapp = self.entry_addapp.get_text()
+        addapp_bat = f"{os.path.dirname(self.file_path)}/faugus-{title_formatted}.bat"
+
+        if self.entry_addapp.get_text():
+            with open(addapp_bat, "w") as bat_file:
+                bat_file.write(f'start "" "z:{addapp}"\n')
+                bat_file.write(f'start "" "z:{self.file_path}"\n')
 
         if os.path.isfile(os.path.expanduser(self.icon_temp)):
             os.rename(os.path.expanduser(self.icon_temp), f'{self.icons_path}/{title_formatted}.ico')
@@ -6636,7 +6480,9 @@ class CreateShortcut(Gtk.Window):
 
         # Add the fixed command and remaining arguments
         command_parts.append(f"'{umu_run}'")
-        if self.file_path:
+        if self.entry_addapp.get_text():
+            command_parts.append(f"'{addapp_bat}'")
+        elif self.file_path:
             command_parts.append(f"'{self.file_path}'")
         if game_arguments:
             command_parts.append(f"{game_arguments}")
@@ -6737,8 +6583,6 @@ class CreateShortcut(Gtk.Window):
 
         dialog = Gtk.Dialog(title=_("Select an icon for the shortcut"), parent=self, flags=0)
         dialog.set_size_request(720, 720)
-        if faugus_session:
-            dialog.fullscreen()
 
         filechooser = Gtk.FileChooserWidget(action=Gtk.FileChooserAction.OPEN)
         filechooser.set_current_folder(os.path.expanduser("~/"))
@@ -6793,8 +6637,6 @@ class CreateShortcut(Gtk.Window):
                     dialog_image.set_resizable(False)
                     dialog_image.set_icon_from_file(faugus_png)
                     subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-                    if faugus_session:
-                        dialog_image.fullscreen()
 
                     label = Gtk.Label()
                     label.set_label(_("The selected file is not a valid image."))
@@ -6927,7 +6769,6 @@ def run_file(file_path):
             f.write(f'start-boot=False\n')
             f.write(f'interface-mode=List\n')
             f.write(f'start-maximized=False\n')
-            f.write(f'gamepad-navigation=False\n')
 
     if not file_path.endswith(".reg"):
         mangohud = "MANGOHUD=1" if mangohud else ""
@@ -6988,41 +6829,7 @@ def apply_dark_theme():
     if is_dark_theme:
         Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
 
-
-def ensure_session_ini():
-    session_file = os.path.join(faugus_launcher_dir, "session.ini")
-    os.makedirs(faugus_launcher_dir, exist_ok=True)
-
-    if not os.path.exists(session_file):
-        default_content = """\
-# Screen's resolution
-SCREEN_WIDTH=1920
-SCREEN_HEIGHT=1080
-
-# Game's resolution
-INTERNAL_WIDTH=1280
-INTERNAL_HEIGHT=720
-
-# Refresh rate
-REFRESH_RATE=60
-
-# Output order preference. "DP-0, DP-1, DP-2"
-PREFER_OUTPUT=
-
-# Adaptive Sync (VRR). Set 1 to enable
-ADAPTIVE_SYNC=
-
-# HDR. Set 1 to enable
-HDR_SUPPORT=
-"""
-        with open(session_file, "w") as f:
-            f.write(default_content)
-
-
-def main():
-    global faugus_session
-
-    ensure_session_ini()
+def faugus_launcher():
     apply_dark_theme()
 
     if len(sys.argv) == 1:
@@ -7036,12 +6843,6 @@ def main():
             app.hide()
             app.connect("destroy", app.on_destroy)
             Gtk.main()
-        elif sys.argv[1] == "--session":
-            faugus_session = True
-            print(_("Session mode activated"))
-            app = Main()
-            app.connect("destroy", app.on_destroy)
-            Gtk.main()
 
     elif len(sys.argv) == 3 and sys.argv[1] == "--shortcut":
         app = CreateShortcut(sys.argv[2])
@@ -7052,14 +6853,18 @@ def main():
         print(_("Invalid arguments"))
 
 
-if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] != "--hide" and sys.argv[1] != "--session":
+def main():
+    if len(sys.argv) == 2 and sys.argv[1] != "--hide":
         run_file(sys.argv[1])
     elif len(sys.argv) == 3 and sys.argv[1] == "--shortcut":
-        main()
+        faugus_launcher()
     else:
         try:
             with lock:
-                main()
+                faugus_launcher()
         except Timeout:
             print(_("Faugus Launcher is already running."))
+
+
+if __name__ == "__main__":
+    main()

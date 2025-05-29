@@ -64,11 +64,27 @@ LOCALE_DIR = (
 
 locale.setlocale(locale.LC_ALL, '')
 lang = locale.getlocale()[0]
+if os.path.exists(config_file_dir):
+    with open(config_file_dir, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('language='):
+                lang = line.split('=', 1)[1].strip()
+                break
+try:
+    translation = gettext.translation(
+        'faugus-proton-manager',
+        localedir=LOCALE_DIR,
+        languages=[lang]
+    )
+    translation.install()
+    globals()['_'] = translation.gettext
+except FileNotFoundError:
+    gettext.install('faugus-proton-manager', localedir=LOCALE_DIR)
+    globals()['_'] = gettext.gettext
 
 class ProtonDownloader(Gtk.Dialog):
     def __init__(self):
-        self.load_config()
-        self.apply_translation(self.language)
         super().__init__(title=_("Faugus GE-Proton Manager"))
         self.set_resizable(False)
         self.set_modal(True)
@@ -120,27 +136,14 @@ class ProtonDownloader(Gtk.Dialog):
         self.grid.set_row_spacing(5)
         self.grid.set_column_spacing(10)
 
+        self.load_config()
+
         # Fetch and populate releases in the Grid
         self.releases = []
         self.get_releases()
         self.show_all()
         self.progress_bar.set_visible(False)
         self.progress_label.set_visible(False)
-
-
-
-    def apply_translation(self, language_code):
-        try:
-            translation = gettext.translation(
-                'faugus-proton-manager',
-                localedir=LOCALE_DIR,
-                languages=[language_code]
-            )
-            translation.install()
-            globals()['_'] = translation.gettext
-        except FileNotFoundError:
-            gettext.install('faugus-proton-manager', localedir=LOCALE_DIR)
-            globals()['_'] = gettext.gettext
 
     def load_config(self):
         config_file = config_file_dir
@@ -160,7 +163,7 @@ class ProtonDownloader(Gtk.Dialog):
             self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False", lang)
             self.default_runner = "GE-Proton"
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
         config_file = config_file_dir
 
         config_path = faugus_launcher_dir
@@ -194,7 +197,6 @@ class ProtonDownloader(Gtk.Dialog):
         config['start-maximized'] = checkbox_start_maximized
         config['start-fullscreen'] = checkbox_start_fullscreen
         config['gamepad-navigation'] = checkbox_gamepad_navigation
-        config['run-in-prefix'] = checkbox_run_in_prefix
         config['enable-logging'] = checkbox_enable_logging
         config['wayland-driver'] = checkbox_wayland_driver
         config['enable-hdr'] = checkbox_enable_hdr
@@ -356,7 +358,11 @@ def apply_dark_theme():
     if is_dark_theme:
         Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
 
-apply_dark_theme()
-win = ProtonDownloader()
-win.connect("destroy", Gtk.main_quit)
-Gtk.main()
+def main():
+    apply_dark_theme()
+    win = ProtonDownloader()
+    win.connect("destroy", Gtk.main_quit)
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()

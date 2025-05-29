@@ -5,7 +5,6 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, GdkPixbuf, Gio
 from threading import Thread
 from pathlib import Path
-import atexit
 import sys
 import subprocess
 import argparse
@@ -84,8 +83,6 @@ def remove_ansi_escape(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
 
-faugus_session = False
-
 LOCALE_DIR = (
     PathManager.system_data('locale')
     if os.path.isdir(PathManager.system_data('locale'))
@@ -94,6 +91,24 @@ LOCALE_DIR = (
 
 locale.setlocale(locale.LC_ALL, '')
 lang = locale.getlocale()[0]
+if os.path.exists(config_file_dir):
+    with open(config_file_dir, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('language='):
+                lang = line.split('=', 1)[1].strip()
+                break
+try:
+    translation = gettext.translation(
+        'faugus-run',
+        localedir=LOCALE_DIR,
+        languages=[lang]
+    )
+    translation.install()
+    globals()['_'] = translation.gettext
+except FileNotFoundError:
+    gettext.install('faugus-run', localedir=LOCALE_DIR)
+    globals()['_'] = gettext.gettext
 
 class FaugusRun:
     def __init__(self, message):
@@ -106,15 +121,12 @@ class FaugusRun:
         self.default_prefix = None
         self.discrete_gpu = None
         self.splash_disable = None
-        self.run_in_prefix = None
 
     def show_error_dialog(self, protonpath):
         dialog = Gtk.Dialog(title="Faugus Launcher")
         dialog.set_resizable(False)
         dialog.set_icon_from_file(faugus_png)
         subprocess.Popen(["canberra-gtk-play", "-f", faugus_notification])
-        if faugus_session:
-            dialog.fullscreen()
 
         label = Gtk.Label()
         label.set_label(_("{path} was not found.").format(path=protonpath))
@@ -159,23 +171,7 @@ class FaugusRun:
         Gtk.main_quit()
         sys.exit()
 
-    def apply_translation(self, language_code):
-        try:
-            translation = gettext.translation(
-                'faugus-run',
-                localedir=LOCALE_DIR,
-                languages=[language_code]
-            )
-            translation.install()
-            globals()['_'] = translation.gettext
-        except FileNotFoundError:
-            gettext.install('faugus-run', localedir=LOCALE_DIR)
-            globals()['_'] = gettext.gettext
-
     def start_process(self, command):
-
-        print(self.message)
-
         protonpath = next((part.split('=')[1] for part in self.message.split() if part.startswith("PROTONPATH=")), None)
         if protonpath and protonpath != "GE-Proton":
             protonpath_path = Path(share_dir) / 'Steam/compatibilitytools.d' / protonpath
@@ -196,10 +192,7 @@ class FaugusRun:
         if self.discrete_gpu == None:
             discrete_gpu = "DRI_PRIME=1"
 
-        if self.run_in_prefix and "UMU_NO_PROTON" not in self.message:
-            self.message = f'PROTON_VERB=run {self.message}'
-
-        if "WINEPREFIX" not in self.message and "UMU_NO_PROTON" not in self.message:
+        if "WINEPREFIX" not in self.message:
             if self.default_runner:
                 if "PROTONPATH" not in self.message:
                     self.message = f'WINEPREFIX="{self.default_prefix}/default" PROTONPATH={self.default_runner} {self.message}'
@@ -219,8 +212,9 @@ class FaugusRun:
                         self.message = f'PROTONFIXES_DISABLE=1 {self.message}'
                     break
 
-        if "proton-cachyos" in self.message and "slr" in self.message:
-            self.message = f'UMU_NO_RUNTIME=1 {self.message}'
+        if "proton-cachyos" in self.message:
+            if "slr" not in self.message:
+                self.message = f'UMU_NO_RUNTIME=1 {self.message}'
 
         if self.wayland_driver:
             self.message = f'PROTON_ENABLE_WAYLAND=1 {self.message}'
@@ -230,8 +224,7 @@ class FaugusRun:
         print(self.message)
 
         match = re.search(r"WINEPREFIX=['\"]([^'\"]+)", self.message)
-        try: self.game_title = match.group(1).split("/")[-1]
-        except: self.game_title = "default"
+        self.game_title = match.group(1).split("/")[-1]
 
         if "UMU_NO_PROTON" not in self.message:
             if self.enable_logging:
@@ -281,16 +274,15 @@ class FaugusRun:
             self.splash_disable = config_dict.get('splash-disable', 'False') == 'True'
             self.default_runner = config_dict.get('default-runner', '')
             self.default_prefix = config_dict.get('default-prefix', '')
-            self.run_in_prefix = config_dict.get('run-in-prefix', 'False') == 'True'
             self.enable_logging = config_dict.get('enable-logging', 'False') == 'True'
             self.wayland_driver = config_dict.get('wayland-driver', 'False') == 'True'
             self.enable_hdr = config_dict.get('enable-hdr', 'False') == 'True'
             self.language = config_dict.get('language', '')
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", "False", lang)
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "False", "False", "False", "False", lang)
             self.default_runner = "GE-Proton"
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_gamepad_navigation, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
         config_file = config_file_dir
 
         config_path = faugus_launcher_dir
@@ -323,8 +315,6 @@ class FaugusRun:
         config['interface-mode'] = combo_box_interface
         config['start-maximized'] = checkbox_start_maximized
         config['start-fullscreen'] = checkbox_start_fullscreen
-        config['gamepad-navigation'] = checkbox_gamepad_navigation
-        config['run-in-prefix'] = checkbox_run_in_prefix
         config['enable-logging'] = checkbox_enable_logging
         config['wayland-driver'] = checkbox_wayland_driver
         config['enable-hdr'] = checkbox_enable_hdr
@@ -339,16 +329,11 @@ class FaugusRun:
 
     def show_warning_dialog(self):
         self.load_config()
-        self.apply_translation(self.language)
-        print(self.language)
         self.warning_dialog = Gtk.Window(title="Faugus Launcher")
         self.warning_dialog.set_decorated(False)
         self.warning_dialog.set_resizable(False)
         self.warning_dialog.set_default_size(280, -1)
         self.warning_dialog.set_icon_from_file(faugus_png)
-
-        if faugus_session:
-            self.warning_dialog.fullscreen()
 
         frame = Gtk.Frame()
         frame.set_label_align(0.5, 0.5)
@@ -524,8 +509,6 @@ class FaugusRun:
                 dialog.set_resizable(False)
                 dialog.set_icon_from_file(faugus_png)
                 subprocess.Popen(["canberra-gtk-play", "-i", "dialog-information"])
-                if faugus_session:
-                    dialog.fullscreen()
 
                 label = Gtk.Label()
                 label.set_label(_("The keys and values were successfully added to the registry."))
@@ -604,17 +587,12 @@ def apply_dark_theme():
         Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
 
 def main():
-    global faugus_session
     apply_dark_theme()
     parser = argparse.ArgumentParser(description="Faugus Run")
     parser.add_argument("message")
     parser.add_argument("command", nargs='?', default=None)
-    parser.add_argument("session", nargs='?', default=None)
 
     args = parser.parse_args()
-
-    if args.session == "session":
-        faugus_session = True
 
     handle_command(args.message, args.command)
 
