@@ -3192,7 +3192,6 @@ class Settings(Gtk.Dialog):
 
         self.grid_big_interface.attach(self.checkbox_start_maximized, 0, 0, 1, 1)
         self.grid_big_interface.attach(self.checkbox_start_fullscreen, 0, 1, 1, 1)
-        self.grid_big_interface.attach(self.checkbox_gamepad_navigation, 0, 2, 1, 1)
 
         grid_support.attach(button_kofi, 0, 1, 1, 1)
         grid_support.attach(button_paypal, 1, 1, 1, 1)
