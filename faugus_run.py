@@ -121,6 +121,7 @@ class FaugusRun:
         self.default_prefix = None
         self.discrete_gpu = None
         self.splash_disable = None
+        self.run_in_prefix = None
 
     def show_error_dialog(self, protonpath):
         dialog = Gtk.Dialog(title="Faugus Launcher")
@@ -172,6 +173,9 @@ class FaugusRun:
         sys.exit()
 
     def start_process(self, command):
+
+        print(self.message)
+
         protonpath = next((part.split('=')[1] for part in self.message.split() if part.startswith("PROTONPATH=")), None)
         if protonpath and protonpath != "GE-Proton":
             protonpath_path = Path(share_dir) / 'Steam/compatibilitytools.d' / protonpath
@@ -192,7 +196,10 @@ class FaugusRun:
         if self.discrete_gpu == None:
             discrete_gpu = "DRI_PRIME=1"
 
-        if "WINEPREFIX" not in self.message:
+        if self.run_in_prefix and "UMU_NO_PROTON" not in self.message:
+            self.message = f'PROTON_VERB=run {self.message}'
+
+        if "WINEPREFIX" not in self.message and "UMU_NO_PROTON" not in self.message:
             if self.default_runner:
                 if "PROTONPATH" not in self.message:
                     self.message = f'WINEPREFIX="{self.default_prefix}/default" PROTONPATH={self.default_runner} {self.message}'
@@ -224,7 +231,8 @@ class FaugusRun:
         print(self.message)
 
         match = re.search(r"WINEPREFIX=['\"]([^'\"]+)", self.message)
-        self.game_title = match.group(1).split("/")[-1]
+        try: self.game_title = match.group(1).split("/")[-1]
+        except: self.game_title = "default"
 
         if "UMU_NO_PROTON" not in self.message:
             if self.enable_logging:
@@ -274,15 +282,16 @@ class FaugusRun:
             self.splash_disable = config_dict.get('splash-disable', 'False') == 'True'
             self.default_runner = config_dict.get('default-runner', '')
             self.default_prefix = config_dict.get('default-prefix', '')
+            self.run_in_prefix = config_dict.get('run-in-prefix', 'False') == 'True'
             self.enable_logging = config_dict.get('enable-logging', 'False') == 'True'
             self.wayland_driver = config_dict.get('wayland-driver', 'False') == 'True'
             self.enable_hdr = config_dict.get('enable-hdr', 'False') == 'True'
             self.language = config_dict.get('language', '')
         else:
-            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "List", "False", "False", "False", "False", "False", lang)
+            self.save_config(False, '', "False", "False", "False", "GE-Proton", "True", "False", "False", "False", "False", "List", "False", "False", "False", "False", "False", lang)
             self.default_runner = "GE-Proton"
 
-    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
+    def save_config(self, checkbox_state, default_prefix, mangohud_state, gamemode_state, disable_hidraw_state, default_runner, checkbox_discrete_gpu_state, checkbox_splash_disable, checkbox_system_tray, checkbox_start_boot, combo_box_interface, checkbox_start_maximized, checkbox_start_fullscreen, checkbox_run_in_prefix, checkbox_enable_logging, checkbox_wayland_driver, checkbox_enable_hdr, language):
         config_file = config_file_dir
 
         config_path = faugus_launcher_dir
@@ -315,6 +324,7 @@ class FaugusRun:
         config['interface-mode'] = combo_box_interface
         config['start-maximized'] = checkbox_start_maximized
         config['start-fullscreen'] = checkbox_start_fullscreen
+        config['run-in-prefix'] = checkbox_run_in_prefix
         config['enable-logging'] = checkbox_enable_logging
         config['wayland-driver'] = checkbox_wayland_driver
         config['enable-hdr'] = checkbox_enable_hdr
